@@ -54,5 +54,4 @@ impl Default for StopQueue {
 pub enum StopReason {
     StopCalled,
     ParentStopping,
-    SystemStopping,
 }

@@ -1,30 +1,27 @@
 use std::{marker::PhantomData, sync::atomic::AtomicPtr};
 
 use anyhow::{Context as _, Error};
-use stewart::{ActorId, Addr, State, System, SystemOptions, World};
+use stewart::{Actor, ActorId, Addr, Options, State, World};
 
 pub fn when<F, M>(
     world: &mut World,
     parent: Option<ActorId>,
-    options: SystemOptions,
+    options: Options,
     function: F,
 ) -> Result<Addr<M>, Error>
 where
-    F: FnMut(&mut World, ActorId, M) -> Result<bool, Error> + 'static,
+    F: FnMut(&mut World, M) -> Result<bool, Error> + 'static,
     M: 'static,
 {
-    let id = world.create(parent)?;
-
-    // In-line create a new system
-    let system: WhenSystem<F, M> = WhenSystem { _w: PhantomData };
-    let system = world.register(system, id, options);
+    let id = world.create(parent, options)?;
 
     // Start the actor
     let actor = When::<F, M> {
+        id,
         function,
         _a: PhantomData,
     };
-    world.start(id, system, actor)?;
+    world.start(id, actor)?;
 
     Ok(Addr::new(id))
 }
@@ -43,8 +40,8 @@ where
     let addr = when(
         world,
         parent,
-        SystemOptions::high_priority(),
-        move |world, _id, message| {
+        Options::high_priority(),
+        move |world, message| {
             let message = (function)(message);
             world.send(target, message);
             Ok(true)
@@ -69,8 +66,8 @@ where
     let addr = when(
         world,
         parent,
-        SystemOptions::high_priority(),
-        move |world, _id, message| {
+        Options::high_priority(),
+        move |world, message| {
             let function = function
                 .take()
                 .context("map_once actor called more than once")?;
@@ -83,33 +80,28 @@ where
     Ok(addr)
 }
 
-struct WhenSystem<F, M> {
-    _w: PhantomData<When<F, M>>,
+struct When<F, M> {
+    id: ActorId,
+    function: F,
+    _a: PhantomData<AtomicPtr<M>>,
 }
 
-impl<F, M> System for WhenSystem<F, M>
+impl<F, M> Actor for When<F, M>
 where
-    F: FnMut(&mut World, ActorId, M) -> Result<bool, Error> + 'static,
+    F: FnMut(&mut World, M) -> Result<bool, Error> + 'static,
     M: 'static,
 {
-    type Instance = When<F, M>;
     type Message = M;
 
     fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
-        while let Some((id, message)) = state.next() {
-            let instance = state.get_mut(id).context("failed to get instance")?;
-            let result = (instance.function)(world, id, message)?;
+        while let Some(message) = state.next() {
+            let result = (self.function)(world, message)?;
 
             if !result {
-                world.stop(id)?;
+                world.stop(self.id)?;
             }
         }
 
         Ok(())
     }
-}
-
-struct When<F, M> {
-    function: F,
-    _a: PhantomData<AtomicPtr<M>>,
 }

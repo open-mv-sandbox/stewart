@@ -5,8 +5,8 @@
 //! This is an API reference for the stewart rust library. For a detailed user guide, read the
 //! stewart book.
 
+mod actor;
 mod stop_queue;
-mod system;
 mod tree;
 mod world;
 
@@ -14,9 +14,9 @@ use anyhow::Error;
 use thiserror::Error;
 
 pub use self::{
-    system::{State, System, SystemOptions},
+    actor::{Actor, Options, State},
     tree::ActorId,
-    world::{Addr, SystemId, World},
+    world::{Addr, World},
 };
 
 /// Error on actor creation.
@@ -38,15 +38,6 @@ pub enum StartError {
     /// The actor couldn't be found.
     #[error("actor not found")]
     ActorNotFound,
-    /// The system couldn't be found.
-    #[error("system not found")]
-    SystemNotFound,
-    /// The system is unavailable.
-    #[error("system unavailable")]
-    SystemUnavailable,
-    /// Actor instance's type is wrong.
-    #[error("instance wrong type")]
-    InstanceWrongType,
 }
 
 /// Internal error, this is always a bug.

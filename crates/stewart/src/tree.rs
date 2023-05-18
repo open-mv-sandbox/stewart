@@ -1,7 +1,7 @@
 use anyhow::Error;
 use thunderdome::{Arena, Index};
 
-use crate::{CreateError, SystemId};
+use crate::{actor::AnyActorEntry, CreateError, Options};
 
 #[derive(Default)]
 pub struct Tree {
@@ -21,10 +21,6 @@ impl Tree {
         let index = self.nodes.insert(node);
 
         Ok(ActorId { index })
-    }
-
-    pub fn get(&self, actor: ActorId) -> Option<&Node> {
-        self.nodes.get(actor.index)
     }
 
     pub fn get_mut(&mut self, actor: ActorId) -> Option<&mut Node> {
@@ -52,33 +48,52 @@ impl Tree {
 
         Ok(())
     }
+
+    pub fn query_debug_names(&self) -> Vec<&'static str> {
+        let mut names = Vec::new();
+
+        for (_, node) in &self.nodes {
+            let name = node
+                .entry
+                .as_ref()
+                .map(|e| e.debug_name())
+                .unwrap_or("Unknown");
+            names.push(name);
+        }
+
+        names
+    }
 }
 
 /// Handle referencing an actor in a `World`.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct ActorId {
     index: Index,
 }
 
 pub struct Node {
-    system: Option<SystemId>,
+    entry: Option<Box<dyn AnyActorEntry>>,
     parent: Option<ActorId>,
+    options: Options,
 }
 
 impl Node {
-    pub fn new(parent: Option<ActorId>) -> Self {
+    pub fn new(parent: Option<ActorId>, options: Options) -> Self {
         Self {
-            system: None,
+            entry: None,
             parent,
+            options,
         }
     }
 
-    pub fn system(&self) -> Option<SystemId> {
-        self.system
+    pub fn entry_mut(&mut self) -> &mut Option<Box<dyn AnyActorEntry>> {
+        // TODO: This function, can be replaced with some convenience functions
+        //  for getting/setting/borrowing/etc actors.
+        &mut self.entry
     }
 
-    pub fn set_system(&mut self, value: Option<SystemId>) {
-        self.system = value;
+    pub fn options(&self) -> &Options {
+        &self.options
     }
 
     pub fn parent(&self) -> Option<ActorId> {

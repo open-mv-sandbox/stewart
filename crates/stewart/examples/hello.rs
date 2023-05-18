@@ -30,9 +30,9 @@ fn main() -> Result<(), Error> {
 
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
-    use anyhow::{Context, Error};
-    use stewart::{Addr, State, System, SystemOptions, World};
-    use tracing::{event, instrument, span, Level};
+    use anyhow::Error;
+    use stewart::{Actor, ActorId, Addr, Options, State, World};
+    use tracing::{event, instrument, Level};
 
     /// Start a hello service on the current actor world.
     #[instrument(skip_all, fields(name = name))]
@@ -40,17 +40,14 @@ mod hello_service {
         world: &mut World,
         name: String,
     ) -> Result<Addr<HelloMesage>, Error> {
-        event!(Level::DEBUG, "creating service");
+        event!(Level::INFO, "creating service");
 
         // Create the actor in the world
-        let id = world.create(None)?;
+        let id = world.create(None, Options::default())?;
 
-        // Create a system, self-owned by this actor
-        let system = world.register(HelloSystem, id, SystemOptions::default());
-
-        // Start the instance on the actor
-        let instance = HelloService { name };
-        world.start(id, system, instance)?;
+        // Start the actor
+        let actor = HelloService { id, name };
+        world.start(id, actor)?;
 
         Ok(Addr::new(id))
     }
@@ -62,38 +59,33 @@ mod hello_service {
 
     // The actor implementation below remains entirely private to the module.
 
-    struct HelloSystem;
+    #[derive(Debug)]
+    struct HelloService {
+        id: ActorId,
+        name: String,
+    }
 
-    impl System for HelloSystem {
-        type Instance = HelloService;
+    impl Actor for HelloService {
         type Message = HelloMesage;
 
+        #[instrument("hello_service", skip_all, fields(name = self.name))]
         fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
-            while let Some((id, message)) = state.next() {
-                let instance = state.get_mut(id).context("failed to get instance")?;
-
-                let span = span!(Level::INFO, "hello_service", name = instance.name);
-                let _enter = span.enter();
-
+            while let Some(message) = state.next() {
                 // Process the message
                 match message {
                     HelloMesage::Greet(to) => {
-                        event!(Level::INFO, "Hello, {} from {}!", to, instance.name)
+                        event!(Level::INFO, "Hello, {} from {}!", to, self.name)
                     }
                     HelloMesage::Stop => {
                         event!(Level::INFO, "stopping service");
-                        world.stop(id)?;
+                        world.stop(self.id)?;
                     }
                 }
             }
 
             Ok(())
         }
-    }
-
-    struct HelloService {
-        name: String,
     }
 }

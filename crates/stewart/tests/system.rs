@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Error};
-use stewart::{ActorId, Addr, StartError, State, System, SystemOptions, World};
+use stewart::{Actor, ActorId, Addr, Options, StartError, State, World};
 use tracing::{event, Level};
 use tracing_test::traced_test;
 
@@ -46,14 +46,13 @@ fn stop_actors() -> Result<(), Error> {
 fn not_started_removed() -> Result<(), Error> {
     let mut world = World::new();
 
-    let actor = world.create(None)?;
-    let system = world.register(TestActorSystem, actor, SystemOptions::default());
+    let actor = world.create(None, Options::default())?;
 
     // Process, this should remove the stale actor
     world.run_until_idle()?;
 
     // Make sure we can't start
-    let result = world.start(actor, system, TestActor::default());
+    let result = world.start(actor, TestActor::default());
     if let Err(StartError::ActorNotFound) = result {
         event!(Level::INFO, "correct result");
     } else {
@@ -71,12 +70,11 @@ fn given_parent_child(world: &mut World) -> Result<(ActorInfo, ActorInfo), Error
 }
 
 fn given_actor<'a>(world: &mut World, parent: Option<ActorId>) -> Result<ActorInfo, Error> {
-    let actor = world.create(parent)?;
-    let system = world.register(TestActorSystem, actor, SystemOptions::default());
+    let actor = world.create(parent, Options::default())?;
 
     let instance = TestActor::default();
     let count = instance.count.clone();
-    world.start(actor, system, instance)?;
+    world.start(actor, instance)?;
 
     let info = ActorInfo {
         id: actor,
@@ -99,23 +97,19 @@ struct ActorInfo {
     count: Rc<AtomicUsize>,
 }
 
-struct TestActorSystem;
+#[derive(Default)]
+struct TestActor {
+    count: Rc<AtomicUsize>,
+}
 
-impl System for TestActorSystem {
-    type Instance = TestActor;
+impl Actor for TestActor {
     type Message = ();
 
     fn process(&mut self, _world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
-        while let Some((id, _)) = state.next() {
-            let instance = state.get_mut(id).context("failed to get instance")?;
-            instance.count.fetch_add(1, Ordering::SeqCst);
+        while let Some(_) = state.next() {
+            self.count.fetch_add(1, Ordering::SeqCst);
         }
 
         Ok(())
     }
-}
-
-#[derive(Default)]
-struct TestActor {
-    count: Rc<AtomicUsize>,
 }
