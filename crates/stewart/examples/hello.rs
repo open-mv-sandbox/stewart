@@ -4,7 +4,7 @@ use anyhow::Error;
 use stewart::World;
 use tracing::{event, Level};
 
-use crate::hello_service::start_hello_service;
+use crate::hello_service::{start_hello_service, HelloMesage};
 
 fn main() -> Result<(), Error> {
     utils::init_logging();
@@ -16,8 +16,11 @@ fn main() -> Result<(), Error> {
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
-    world.send(service, "World");
-    world.send(service, "Actors");
+    world.send(service, HelloMesage::Greet("World".to_string()));
+    world.send(service, HelloMesage::Greet("Actors".to_string()));
+
+    // Stop the actor, automatically cleaning up associated resources
+    world.send(service, HelloMesage::Stop);
 
     // Process messages
     world.run_until_idle()?;
@@ -33,7 +36,10 @@ mod hello_service {
 
     /// Start a hello service on the current actor world.
     #[instrument(skip_all, fields(name = name))]
-    pub fn start_hello_service(world: &mut World, name: String) -> Result<Addr<String>, Error> {
+    pub fn start_hello_service(
+        world: &mut World,
+        name: String,
+    ) -> Result<Addr<HelloMesage>, Error> {
         event!(Level::DEBUG, "creating service");
 
         // Create the actor in the world
@@ -49,24 +55,38 @@ mod hello_service {
         Ok(Addr::new(id))
     }
 
+    pub enum HelloMesage {
+        Greet(String),
+        Stop,
+    }
+
     // The actor implementation below remains entirely private to the module.
 
     struct HelloSystem;
 
     impl System for HelloSystem {
         type Instance = HelloService;
-        type Message = String;
+        type Message = HelloMesage;
 
-        fn process(&mut self, _world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
+        fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
             while let Some((id, message)) = state.next() {
                 let instance = state.get_mut(id).context("failed to get instance")?;
 
-                let span = span!(Level::INFO, "hello-service", name = instance.name);
+                let span = span!(Level::INFO, "hello_service", name = instance.name);
                 let _enter = span.enter();
 
-                event!(Level::INFO, "Hello, {} from {}!", message, instance.name);
+                // Process the message
+                match message {
+                    HelloMesage::Greet(to) => {
+                        event!(Level::INFO, "Hello, {} from {}!", to, instance.name)
+                    }
+                    HelloMesage::Stop => {
+                        event!(Level::INFO, "stopping service");
+                        world.stop(id)?;
+                    }
+                }
             }
 
             Ok(())

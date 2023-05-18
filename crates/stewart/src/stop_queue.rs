@@ -2,33 +2,33 @@ use std::collections::BTreeSet;
 
 use anyhow::{Context, Error};
 
-pub struct UniqueQueue<T> {
-    queue: Vec<T>,
-    set: BTreeSet<T>,
+use crate::ActorId;
+
+pub struct StopQueue {
+    queue: Vec<(ActorId, StopReason)>,
+    set: BTreeSet<ActorId>,
 }
 
-impl<T> UniqueQueue<T>
-where
-    T: Ord + Clone + Copy,
-{
-    pub fn push(&mut self, value: T) -> Result<(), Error> {
+impl StopQueue {
+    // Push or bump an entry in the queue.
+    pub fn enqueue(&mut self, value: ActorId, reason: StopReason) -> Result<(), Error> {
         // Check if it's already in the queue, if it is remove it so we can move it to the end
         if !self.set.insert(value) {
             let index = self
                 .queue
                 .iter()
-                .position(|v| *v == value)
+                .position(|v| v.0 == value)
                 .context("value in pending stop set, but not in list")?;
             self.queue.remove(index);
         }
 
         // Add to end of queue
-        self.queue.push(value);
+        self.queue.push((value, reason));
 
         Ok(())
     }
 
-    pub fn peek(&self) -> Option<T> {
+    pub fn peek(&self) -> Option<(ActorId, StopReason)> {
         self.queue.last().cloned()
     }
 
@@ -36,16 +36,23 @@ where
         self.queue.pop();
     }
 
-    pub fn contains(&self, value: T) -> bool {
+    pub fn contains(&self, value: ActorId) -> bool {
         self.set.contains(&value)
     }
 }
 
-impl<T> Default for UniqueQueue<T> {
+impl Default for StopQueue {
     fn default() -> Self {
         Self {
             queue: Default::default(),
             set: Default::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum StopReason {
+    StopCalled,
+    ParentStopping,
+    SystemStopping,
 }

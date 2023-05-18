@@ -49,10 +49,15 @@ impl SystemOptions {
 pub trait AnySystemEntry {
     fn debug_name(&self) -> &'static str;
 
+    fn actor_ids_except(&self, actor_id: ActorId) -> Vec<ActorId>;
+
+    /// Insert an actor into the system.
     fn insert(&mut self, actor: ActorId, slot: &mut dyn Any) -> Result<(), Error>;
 
+    /// Remove an actor from the system.
     fn remove(&mut self, actor: ActorId);
 
+    /// Add a message to be handled to the system's internal queue.
     fn enqueue(&mut self, actor: ActorId, slot: &mut dyn Any) -> Result<(), Error>;
 
     fn process(&mut self, world: &mut World);
@@ -87,6 +92,18 @@ where
 {
     fn debug_name(&self) -> &'static str {
         type_name::<S>()
+    }
+
+    fn actor_ids_except(&self, actor_id: ActorId) -> Vec<ActorId> {
+        let mut ids = Vec::new();
+
+        for (id, _) in &self.state.instances {
+            if *id != actor_id {
+                ids.push(*id);
+            }
+        }
+
+        ids
     }
 
     fn insert(&mut self, actor: ActorId, slot: &mut dyn Any) -> Result<(), Error> {

@@ -2,12 +2,12 @@ use std::{collections::VecDeque, hash::Hash, marker::PhantomData, sync::atomic::
 
 use anyhow::{bail, Context, Error};
 use thunderdome::{Arena, Index};
-use tracing::{event, Level};
+use tracing::{event, instrument, Level};
 
 use crate::{
+    stop_queue::{StopQueue, StopReason},
     system::{AnySystemEntry, SystemEntry},
     tree::{Node, Tree},
-    unique_queue::UniqueQueue,
     ActorId, CreateError, InternalError, StartError, System, SystemOptions,
 };
 
@@ -17,11 +17,10 @@ pub struct World {
     tree: Tree,
     // TODO: Systems collection
     systems: Arena<SystemSlot>,
-    queue: VecDeque<SystemId>,
 
+    pending_process: VecDeque<SystemId>,
     pending_start: Vec<ActorId>,
-    pending_stop: UniqueQueue<ActorId>,
-    pending_unregister: Vec<SystemId>,
+    pending_stop: StopQueue,
 }
 
 impl World {
@@ -34,16 +33,16 @@ impl World {
     ///
     /// Actor processing systems are linked to actors. This means when an actor is cleaned up, the
     /// processing systems linked to it will also be cleaned up.
-    pub fn register<S>(&mut self, system: S, _parent: ActorId, options: SystemOptions) -> SystemId
+    #[instrument(skip_all)]
+    pub fn register<S>(&mut self, system: S, parent: ActorId, options: SystemOptions) -> SystemId
     where
         S: System,
     {
-        // TODO: Implement auto-cleanup.
-
         let entry = Box::new(SystemEntry::new(system));
         let slot = SystemSlot {
-            options,
             entry: Some(entry),
+            parent,
+            options,
         };
         let index = self.systems.insert(slot);
 
@@ -53,6 +52,7 @@ impl World {
     /// Create a new actor.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
+    #[instrument(skip_all)]
     pub fn create(&mut self, parent: Option<ActorId>) -> Result<ActorId, CreateError> {
         event!(Level::INFO, "creating actor");
 
@@ -65,6 +65,7 @@ impl World {
     }
 
     /// Start an actor instance, making it available for handling messages.
+    #[instrument(skip_all)]
     pub fn start<I>(
         &mut self,
         actor: ActorId,
@@ -115,7 +116,7 @@ impl World {
     /// After the current process step is done, the actor and all remaining pending messages will
     /// be dropped.
     pub fn stop(&mut self, actor: ActorId) -> Result<(), Error> {
-        self.pending_stop.push(actor)?;
+        self.pending_stop.enqueue(actor, StopReason::StopCalled)?;
         Ok(())
     }
 
@@ -123,11 +124,12 @@ impl World {
     ///
     /// This will never be handled in-place. The system will queue up the message to be processed
     /// at a later time.
-    pub fn send<M>(&mut self, addr: Addr<M>, message: impl Into<M>)
+    #[instrument(skip_all)]
+    pub fn send<M>(&mut self, addr: Addr<M>, message: M)
     where
         M: 'static,
     {
-        let result = self.try_send(addr.actor, message.into());
+        let result = self.try_send(addr.actor, message);
 
         // TODO: What to do with this error?
         // Sending failures are currently ignored, but maybe we should have a unified message
@@ -162,11 +164,11 @@ impl World {
         system.enqueue(actor, &mut message)?;
 
         // Queue for later processing
-        if !self.queue.contains(&system_id) {
+        if !self.pending_process.contains(&system_id) {
             if !slot.options.high_priority {
-                self.queue.push_back(system_id);
+                self.pending_process.push_back(system_id);
             } else {
-                self.queue.push_front(system_id);
+                self.pending_process.push_front(system_id);
             }
         }
 
@@ -178,7 +180,7 @@ impl World {
         self.process_pending()
             .context("failed to process pending")?;
 
-        while let Some(system_id) = self.queue.pop_front() {
+        while let Some(system_id) = self.pending_process.pop_front() {
             self.process_system(system_id)
                 .context("failed to process")?;
 
@@ -210,58 +212,120 @@ impl World {
         Ok(())
     }
 
+    #[instrument(skip_all)]
     fn process_pending(&mut self) -> Result<(), Error> {
         // Remove any actors that weren't started in time
         while let Some(actor) = self.pending_start.pop() {
             self.stop(actor)?;
         }
 
-        self.process_stop()?;
+        self.process_drop_actors()?;
 
-        // Finalize unregisters
-        for system in self.pending_unregister.drain(..) {
-            self.systems.remove(system.index);
+        Ok(())
+    }
+
+    fn process_drop_actors(&mut self) -> Result<(), Error> {
+        // Process stop queue in reverse order intentionally
+        while let Some((actor_id, reason)) = self.pending_stop.peek() {
+            let systems = self.find_actor_owned_systems(actor_id);
+
+            // Check if all dependents have already stopped
+            if !self.check_stop_dependents(actor_id, &systems)? {
+                continue;
+            }
+
+            // We verified this actor can be removed, so pop it from the queue
+            self.pending_stop.pop();
+            self.process_stop_actor(actor_id, reason, systems)?;
         }
 
         Ok(())
     }
 
-    fn process_stop(&mut self) -> Result<(), Error> {
-        // Process stop queue in reverse order
-        while let Some(actor) = self.pending_stop.peek() {
-            // Check if this actor has any children to process first
-            let mut has_children = false;
-            self.tree.query_children(actor, |child| {
-                self.pending_stop.push(child)?;
-                has_children = true;
-                Ok(())
-            })?;
+    fn find_actor_owned_systems(&self, actor_id: ActorId) -> Vec<SystemId> {
+        let mut systems = Vec::new();
 
-            // If we do have children, stop those first
-            if has_children {
-                continue;
-            }
-
-            // We verified, we can remove this now
-            self.pending_stop.pop();
-            let node = self
-                .tree
-                .remove(actor)
-                .context("node for actor not found")?;
-
-            // Remove it from the system it's in, if it is in one
-            if let Some(system) = node.system() {
-                let slot = self
-                    .systems
-                    .get_mut(system.index)
-                    .context("failed to find system")?;
-                let system = slot.entry.as_mut().context("system unavailable")?;
-
-                system.remove(actor);
+        for (index, system) in &self.systems {
+            if system.parent == actor_id {
+                systems.push(SystemId { index });
             }
         }
 
+        systems
+    }
+
+    fn process_stop_actor(
+        &mut self,
+        actor_id: ActorId,
+        reason: StopReason,
+        systems: Vec<SystemId>,
+    ) -> Result<(), Error> {
+        event!(Level::INFO, ?reason, "stopping actor");
+
+        let node = self
+            .tree
+            .remove(actor_id)
+            .context("node for actor not found")?;
+
+        // Remove it from the system it's in, if it is in one
+        if let Some(system) = node.system() {
+            let slot = self
+                .systems
+                .get_mut(system.index)
+                .context("failed to find system")?;
+            let system = slot.entry.as_mut().context("system unavailable")?;
+
+            system.remove(actor_id);
+        }
+
+        // Remove systems owned by this actor
+        for system_id in systems {
+            event!(Level::DEBUG, "removing system");
+            self.systems.remove(system_id.index);
+
+            // Remove system from queue too, if it's in it
+            self.pending_process.retain(|v| *v != system_id);
+        }
+
         Ok(())
+    }
+
+    fn check_stop_dependents(
+        &mut self,
+        actor_id: ActorId,
+        systems: &[SystemId],
+    ) -> Result<bool, Error> {
+        let mut ready = true;
+
+        // Check if this actor has any children to process first
+        self.tree.query_children(actor_id, |child| {
+            self.pending_stop
+                .enqueue(child, StopReason::ParentStopping)?;
+            ready = false;
+            Ok(())
+        })?;
+
+        // Check if this actor owns systems that have other children, that thus need to be stopped
+        // first
+        for system_id in systems {
+            let slot = self
+                .systems
+                .get(system_id.index)
+                .context("failed to find system")?;
+
+            // Check if there's other actors alive that need to be stopped first for system stop
+            let ids = slot
+                .entry
+                .as_ref()
+                .context("system unavailable")?
+                .actor_ids_except(actor_id);
+            for id in ids {
+                self.pending_stop.enqueue(id, StopReason::SystemStopping)?;
+                ready = false;
+            }
+        }
+
+        Ok(ready)
     }
 }
 
@@ -290,8 +354,9 @@ impl Drop for World {
 }
 
 struct SystemSlot {
-    options: SystemOptions,
     entry: Option<Box<dyn AnySystemEntry>>,
+    parent: ActorId,
+    options: SystemOptions,
 }
 
 /// Handle referencing a system on a `World`.

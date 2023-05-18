@@ -35,7 +35,7 @@ fn stop_actors() -> Result<(), Error> {
     world.stop(parent.id)?;
 
     // Can't send message to child as it should be stopped too
-    when_sent_message_to(&mut world, child.addr)?;
+    when_sent_message_to(&mut world, child.addr).context("test: failed to send message")?;
     assert_eq!(child.count.load(Ordering::SeqCst), 0);
 
     Ok(())

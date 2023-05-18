@@ -5,9 +5,9 @@
 //! This is an API reference for the stewart rust library. For a detailed user guide, read the
 //! stewart book.
 
+mod stop_queue;
 mod system;
 mod tree;
-mod unique_queue;
 mod world;
 
 use anyhow::Error;
