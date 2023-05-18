@@ -7,7 +7,7 @@ Stewart is a minimalist, high-performance, and non-exclusive actor system.
 ## Crates
 
 - [![crates.io](https://img.shields.io/crates/v/stewart.svg?label=stewart)](https://crates.io/crates/stewart) [![docs.rs](https://docs.rs/stewart/badge.svg)](https://docs.rs/stewart/) - Stewart is a minimalist, high-performance, modular, and non-exclusive actor system.
-- [![crates.io](https://img.shields.io/crates/v/stewart-utils.svg?label=stewart-utils)](https://crates.io/crates/stewart) [![docs.rs](https://docs.rs/stewart-utils/badge.svg)](https://docs.rs/stewart-utils/) - Small common utilities for stewart.
+- [![crates.io](https://img.shields.io/crates/v/stewart-utils.svg?label=stewart-utils)](https://crates.io/crates/stewart-utils) [![docs.rs](https://docs.rs/stewart-utils/badge.svg)](https://docs.rs/stewart-utils/) - Small common utilities for stewart.
 
 ## License
 
