@@ -6,6 +6,7 @@
 //! stewart book.
 
 mod actor;
+mod any;
 mod context;
 mod tree;
 mod unique_queue;
@@ -16,33 +17,9 @@ use thiserror::Error;
 
 pub use self::{
     actor::{Actor, Options, State},
-    context::Context,
+    context::{AddrError, Context, StartError},
     world::{Addr, World},
 };
-
-/// Error on actor creation.
-#[derive(Error, Debug)]
-#[non_exhaustive]
-pub enum CreateError {
-    /// Parent not found.
-    #[error("parent not found")]
-    ParentNotFound,
-}
-
-/// Error on actor starting.
-#[derive(Error, Debug)]
-#[non_exhaustive]
-pub enum StartError {
-    /// Can't start root.
-    #[error("cant start root")]
-    CantStartRoot,
-    /// The actor has already been started.
-    #[error("actor already started")]
-    ActorAlreadyStarted,
-    /// The actor couldn't be found.
-    #[error("actor not found")]
-    ActorNotFound,
-}
 
 /// Internal error, this is always a bug.
 #[derive(Error, Debug)]

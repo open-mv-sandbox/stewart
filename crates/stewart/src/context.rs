@@ -1,8 +1,8 @@
 use std::ops::{Deref, DerefMut};
 
-use anyhow::{Context as _, Error};
+use thiserror::Error;
 
-use crate::{tree::Id, Actor, Addr, CreateError, InternalError, Options, StartError, World};
+use crate::{tree::Id, Actor, Addr, InternalError, Options, World};
 
 /// Context for world operations.
 ///
@@ -21,16 +21,15 @@ impl<'a> Context<'a> {
     /// Create a new typed address for an actor.
     ///
     /// Message type is not checked here, but will be validated on sending.
-    pub fn addr<M>(&self) -> Result<Addr<M>, Error> {
-        // TODO: Custom error
-        let id = self.current.context("cant get addr of root")?;
+    pub fn addr<M>(&self) -> Result<Addr<M>, AddrError> {
+        let id = self.current.ok_or(AddrError::CantGetRootAddr)?;
         Ok(Addr::new(id))
     }
 
     /// Create a new actor.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
-    pub fn create(&mut self, options: Options) -> Result<Context, CreateError> {
+    pub fn create(&mut self, options: Options) -> Result<Context, InternalError> {
         let id = self.world.create(self.current, options)?;
         Ok(Context::new(self.world, Some(id)))
     }
@@ -66,4 +65,28 @@ impl<'a> DerefMut for Context<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.world
     }
+}
+
+/// Error on getting address.
+#[derive(Error, Debug)]
+#[non_exhaustive]
+pub enum AddrError {
+    /// Can't get the addr of root.
+    #[error("cant get addr of root")]
+    CantGetRootAddr,
+}
+
+/// Error on actor starting.
+#[derive(Error, Debug)]
+#[non_exhaustive]
+pub enum StartError {
+    /// Can't start root.
+    #[error("cant start root")]
+    CantStartRoot,
+    /// The actor has already been started.
+    #[error("actor already started")]
+    ActorAlreadyStarted,
+    /// The actor couldn't be found.
+    #[error("actor not found")]
+    ActorNotFound,
 }

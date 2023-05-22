@@ -1,7 +1,7 @@
-use anyhow::Error;
+use anyhow::{Context, Error};
 use thunderdome::{Arena, Index};
 
-use crate::{actor::AnyActorEntry, CreateError, Options};
+use crate::{any::AnyActorEntry, Options};
 
 #[derive(Default)]
 pub struct Tree {
@@ -9,12 +9,12 @@ pub struct Tree {
 }
 
 impl Tree {
-    pub fn insert(&mut self, node: Node) -> Result<Id, CreateError> {
+    pub fn insert(&mut self, node: Node) -> Result<Id, Error> {
         // Link to the parent
         if let Some(parent) = node.parent {
             self.nodes
                 .get_mut(parent.index)
-                .ok_or(CreateError::ParentNotFound)?;
+                .context("parent not found")?;
         }
 
         // Insert the node

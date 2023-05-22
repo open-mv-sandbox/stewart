@@ -4,10 +4,11 @@ use anyhow::{bail, Context as _, Error};
 use tracing::{event, instrument, Level};
 
 use crate::{
-    actor::{Actor, ActorEntry},
+    actor::Actor,
+    any::ActorEntry,
     tree::{Id, Node, Tree},
     unique_queue::UniqueQueue,
-    Context, CreateError, InternalError, Options, StartError,
+    Context, InternalError, Options, StartError,
 };
 
 /// Thread-local actor world.
@@ -36,11 +37,7 @@ impl World {
     }
 
     #[instrument("World::crate", skip_all)]
-    pub(crate) fn create(
-        &mut self,
-        parent: Option<Id>,
-        options: Options,
-    ) -> Result<Id, CreateError> {
+    pub(crate) fn create(&mut self, parent: Option<Id>, options: Options) -> Result<Id, Error> {
         event!(Level::DEBUG, "creating actor");
 
         let node = Node::new(parent, options);
