@@ -4,7 +4,7 @@ use anyhow::Error;
 use stewart::World;
 use tracing::{event, Level};
 
-use crate::hello_service::{start_hello_service, HelloMesage};
+use crate::hello_service::Mesage as HelloMessage;
 
 fn main() -> Result<(), Error> {
     utils::init_logging();
@@ -13,15 +13,15 @@ fn main() -> Result<(), Error> {
     let mut ctx = world.root();
 
     // Start the hello service
-    let service = start_hello_service(&mut ctx, "Example".to_string())?;
+    let service = hello_service::start(&mut ctx, "Example".to_string())?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
-    world.send(service, HelloMesage::Greet("World".to_string()));
-    world.send(service, HelloMesage::Greet("Actors".to_string()));
+    world.send(service, HelloMessage::Greet("World".to_string()));
+    world.send(service, HelloMessage::Greet("Actors".to_string()));
 
     // Stop the actor, automatically cleaning up associated resources
-    world.send(service, HelloMesage::Stop);
+    world.send(service, HelloMessage::Stop);
 
     // Process messages
     world.run_until_idle()?;
@@ -36,11 +36,8 @@ mod hello_service {
     use tracing::{event, instrument, Level};
 
     /// Start a hello service on the current actor world.
-    #[instrument(skip_all, fields(name = name))]
-    pub fn start_hello_service(
-        ctx: &mut Context,
-        name: String,
-    ) -> Result<Addr<HelloMesage>, Error> {
+    #[instrument("hello_service", skip_all, fields(name = name))]
+    pub fn start(ctx: &mut Context, name: String) -> Result<Addr<Mesage>, Error> {
         event!(Level::INFO, "starting");
 
         // Create the actor in the world
@@ -53,7 +50,7 @@ mod hello_service {
         Ok(ctx.addr()?)
     }
 
-    pub enum HelloMesage {
+    pub enum Mesage {
         Greet(String),
         Stop,
     }
@@ -65,7 +62,7 @@ mod hello_service {
     }
 
     impl Actor for HelloService {
-        type Message = HelloMesage;
+        type Message = Mesage;
 
         #[instrument("hello_service", skip_all, fields(name = self.name))]
         fn process(&mut self, ctx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
@@ -74,10 +71,10 @@ mod hello_service {
             while let Some(message) = state.next() {
                 // Process the message
                 match message {
-                    HelloMesage::Greet(to) => {
-                        event!(Level::INFO, "Hello, {} from {}!", to, self.name)
+                    Mesage::Greet(to) => {
+                        event!(Level::INFO, "Hello, \"{}\"!", to)
                     }
-                    HelloMesage::Stop => {
+                    Mesage::Stop => {
                         event!(Level::INFO, "stopping service");
                         ctx.stop()?;
                     }

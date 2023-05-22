@@ -36,7 +36,7 @@ impl World {
         Context::new(self, None)
     }
 
-    #[instrument("World::crate", skip_all)]
+    #[instrument("World::create", skip_all)]
     pub(crate) fn create(&mut self, parent: Option<Id>, options: Options) -> Result<Id, Error> {
         event!(Level::DEBUG, "creating actor");
 

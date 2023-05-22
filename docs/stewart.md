@@ -9,7 +9,10 @@ Stewart is a minimalist, high-performance, and non-exclusive actor system.
 - Non-Exclusive: Plays nicely with other actor systems, async runtimes, web-workers, GPU pipelines,
     distributed frameworks, etc... Stewart doesn't limit what you can interact with.
 
-## Why another actor system?
+## Why another actor library?
 
 While many actor libraries already exist in rust, they are generally made for web servers.
 In web servers, performance and latency is often negligible compared to the cost of IO.
+
+Web servers are also generally expected to run as a native binary on a typical dedicated instance.
+Stewart doesn't make this assumption, and can be run in 'weird' contexts, like web workers.

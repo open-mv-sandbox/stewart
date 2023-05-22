@@ -54,7 +54,7 @@ where
             slot.downcast_mut().context("incorrect message type")?;
         let message = slot.take().context("message not in slot")?;
 
-        self.state.queue.push_front(message);
+        self.state.queue.push_back(message);
 
         Ok(())
     }
