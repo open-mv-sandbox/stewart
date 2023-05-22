@@ -63,14 +63,14 @@ where
         let result = self.actor.process(ctx, &mut self.state);
 
         if !self.state.queue.is_empty() {
-            event!(Level::WARN, "system did not process all pending messages");
+            event!(Level::WARN, "actor did not process all pending messages");
         }
 
         match result {
             Ok(value) => value,
             Err(error) => {
                 // TODO: What to do with this?
-                event!(Level::ERROR, ?error, "system failed while processing");
+                event!(Level::ERROR, ?error, "actor failed while processing");
             }
         }
     }

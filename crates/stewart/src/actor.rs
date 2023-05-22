@@ -4,7 +4,7 @@ use anyhow::Error;
 
 use crate::Context;
 
-/// Actor processing system trait.
+/// Actor identity trait.
 pub trait Actor: Sized + 'static {
     /// The type of messages this actor receives.
     type Message;

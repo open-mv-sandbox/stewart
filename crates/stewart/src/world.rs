@@ -83,7 +83,7 @@ impl World {
 
     /// Send a message to an actor.
     ///
-    /// This will never be handled in-place. The system will queue up the message to be processed
+    /// This will never be handled in-place. The world will queue up the message to be processed
     /// at a later time.
     #[instrument(skip_all)]
     pub fn send<M>(&mut self, addr: Addr<M>, message: M)
@@ -113,7 +113,7 @@ impl World {
         let node = self.tree.get_mut(id).context("actor not found")?;
         let entry = node.entry_mut().as_mut().context("actor unavailable")?;
 
-        // Hand the message to the system
+        // Hand the message to the actor
         let mut message = Some(message);
         entry.enqueue(&mut message)?;
 
@@ -156,13 +156,13 @@ impl World {
     fn process_actor(&mut self, id: Id) -> Result<(), Error> {
         // Borrow the actor
         let node = self.tree.get_mut(id).context("failed to find actor")?;
-        let mut actor = node.entry_mut().take().context("system unavailable")?;
+        let mut actor = node.entry_mut().take().context("actor unavailable")?;
 
         // Run the process handler
         let mut ctx = Context::new(self, Some(id));
         actor.process(&mut ctx);
 
-        // Return the system
+        // Return the actor
         let slot = self
             .tree
             .get_mut(id)
@@ -234,7 +234,7 @@ impl Drop for World {
             event!(
                 Level::WARN,
                 ?debug_names,
-                "systems not cleaned up before world drop",
+                "actors not cleaned up before world drop",
             );
         }
     }
@@ -246,13 +246,13 @@ pub enum StopReason {
     ParentStopping,
 }
 
-/// Typed system address of an actor, used for sending messages to the actor.
+/// Typed world address of an actor, used for sending messages to the actor.
 ///
 /// This address can only be used with one specific world. Using it with another world is
 /// not unsafe, but may result in unexpected behavior.
 ///
-/// When distributing work between systems, you can use an 'envoy' actor that relays messages from
-/// one system to another. For example, using an MPSC channel, or even across network.
+/// When distributing work between worlds, you can use an 'envoy' actor that relays messages from
+/// one world to another. For example, using an MPSC channel, or even across network.
 pub struct Addr<M> {
     actor: Id,
     _m: PhantomData<AtomicPtr<M>>,
