@@ -1,11 +1,11 @@
 use std::{marker::PhantomData, sync::atomic::AtomicPtr};
 
 use anyhow::{Context as _, Error};
-use stewart::{Actor, ActorId, Addr, Options, State, World};
+use stewart::{Actor, Id, Addr, Options, State, World};
 
 pub fn when<F, M>(
     world: &mut World,
-    parent: Option<ActorId>,
+    parent: Option<Id>,
     options: Options,
     function: F,
 ) -> Result<Addr<M>, Error>
@@ -28,7 +28,7 @@ where
 
 pub fn map<F, I, O>(
     world: &mut World,
-    parent: Option<ActorId>,
+    parent: Option<Id>,
     target: Addr<O>,
     mut function: F,
 ) -> Result<Addr<I>, Error>
@@ -53,7 +53,7 @@ where
 
 pub fn map_once<F, I, O>(
     world: &mut World,
-    parent: Option<ActorId>,
+    parent: Option<Id>,
     target: Addr<O>,
     function: F,
 ) -> Result<Addr<I>, Error>
@@ -81,7 +81,7 @@ where
 }
 
 struct When<F, M> {
-    id: ActorId,
+    id: Id,
     function: F,
     _a: PhantomData<AtomicPtr<M>>,
 }

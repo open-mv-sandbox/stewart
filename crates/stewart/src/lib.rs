@@ -6,8 +6,8 @@
 //! stewart book.
 
 mod actor;
-mod stop_queue;
 mod tree;
+mod unique_queue;
 mod world;
 
 use anyhow::Error;
@@ -15,7 +15,7 @@ use thiserror::Error;
 
 pub use self::{
     actor::{Actor, Options, State},
-    tree::ActorId,
+    tree::Id,
     world::{Addr, World},
 };
 

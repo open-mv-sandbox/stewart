@@ -5,23 +5,23 @@ use tracing::{event, instrument, Level};
 
 use crate::{
     actor::{Actor, ActorEntry},
-    stop_queue::{StopQueue, StopReason},
     tree::{Node, Tree},
-    ActorId, CreateError, InternalError, Options, StartError,
+    unique_queue::UniqueQueue,
+    CreateError, Id, InternalError, Options, StartError,
 };
 
-/// Thread-local system and actor scheduler.
+/// Thread-local actor world.
 #[derive(Default)]
 pub struct World {
     tree: Tree,
 
-    pending_process: VecDeque<ActorId>,
-    pending_start: Vec<ActorId>,
-    pending_stop: StopQueue,
+    pending_process: VecDeque<Id>,
+    pending_start: Vec<Id>,
+    pending_stop: UniqueQueue<Id, StopReason>,
 }
 
 impl World {
-    /// Create a new empty `System`.
+    /// Create a new empty `World`.
     pub fn new() -> Self {
         Self::default()
     }
@@ -30,11 +30,7 @@ impl World {
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
     #[instrument(skip_all)]
-    pub fn create(
-        &mut self,
-        parent: Option<ActorId>,
-        options: Options,
-    ) -> Result<ActorId, CreateError> {
+    pub fn create(&mut self, parent: Option<Id>, options: Options) -> Result<Id, CreateError> {
         event!(Level::DEBUG, "creating actor");
 
         let node = Node::new(parent, options);
@@ -47,7 +43,7 @@ impl World {
 
     /// Start an actor instance, making it available for handling messages.
     #[instrument(skip_all)]
-    pub fn start<A>(&mut self, id: ActorId, actor: A) -> Result<(), StartError>
+    pub fn start<A>(&mut self, id: Id, actor: A) -> Result<(), StartError>
     where
         A: Actor,
     {
@@ -74,12 +70,12 @@ impl World {
         Ok(())
     }
 
-    /// Stop an actor immediately, and queue it for removal from systems later.
+    /// Queue an actor for stopping.
     ///
     /// After stopping an actor will no longer accept messages, but can still process them.
     /// After the current process step is done, the actor and all remaining pending messages will
     /// be dropped.
-    pub fn stop(&mut self, actor: ActorId) -> Result<(), Error> {
+    pub fn stop(&mut self, actor: Id) -> Result<(), Error> {
         self.pending_stop.enqueue(actor, StopReason::StopCalled)?;
         Ok(())
     }
@@ -103,17 +99,17 @@ impl World {
         }
     }
 
-    fn try_send<M>(&mut self, actor_id: ActorId, message: M) -> Result<(), Error>
+    fn try_send<M>(&mut self, id: Id, message: M) -> Result<(), Error>
     where
         M: 'static,
     {
         // Make sure the actor's not already being stopped
-        if self.pending_stop.contains(actor_id) {
+        if self.pending_stop.contains(id) {
             bail!("actor stopping");
         }
 
         // Get the actor in tree
-        let node = self.tree.get_mut(actor_id).context("actor not found")?;
+        let node = self.tree.get_mut(id).context("actor not found")?;
         let entry = node.entry_mut().as_mut().context("actor unavailable")?;
 
         // Hand the message to the system
@@ -121,15 +117,24 @@ impl World {
         entry.enqueue(&mut message)?;
 
         // Queue for later processing
-        if !self.pending_process.contains(&actor_id) {
-            if !node.options().high_priority {
-                self.pending_process.push_back(actor_id);
-            } else {
-                self.pending_process.push_front(actor_id);
-            }
-        }
+        let high_priority = node.options().high_priority;
+        self.queue_process(id, high_priority);
 
         Ok(())
+    }
+
+    fn queue_process(&mut self, id: Id, high_priority: bool) {
+        if self.pending_process.contains(&id) {
+            event!(Level::TRACE, "actor already queued for processing");
+            return;
+        }
+
+        event!(Level::TRACE, high_priority, "queueing actor for processing");
+        if !high_priority {
+            self.pending_process.push_back(id);
+        } else {
+            self.pending_process.push_front(id);
+        }
     }
 
     /// Process all pending messages, until none are left.
@@ -137,8 +142,8 @@ impl World {
         self.process_pending()
             .context("failed to process pending")?;
 
-        while let Some(actor_id) = self.pending_process.pop_front() {
-            self.process_actor(actor_id).context("failed to process")?;
+        while let Some(id) = self.pending_process.pop_front() {
+            self.process_actor(id).context("failed to process")?;
 
             self.process_pending()
                 .context("failed to process pending")?;
@@ -147,12 +152,9 @@ impl World {
         Ok(())
     }
 
-    fn process_actor(&mut self, actor_id: ActorId) -> Result<(), Error> {
+    fn process_actor(&mut self, id: Id) -> Result<(), Error> {
         // Borrow the actor
-        let node = self
-            .tree
-            .get_mut(actor_id)
-            .context("failed to find actor")?;
+        let node = self.tree.get_mut(id).context("failed to find actor")?;
         let mut actor = node.entry_mut().take().context("system unavailable")?;
 
         // Run the process handler
@@ -161,7 +163,7 @@ impl World {
         // Return the system
         let slot = self
             .tree
-            .get_mut(actor_id)
+            .get_mut(id)
             .context("failed to find actor for return")?;
         *slot.entry_mut() = Some(actor);
 
@@ -182,36 +184,36 @@ impl World {
 
     fn process_stop_actors(&mut self) -> Result<(), Error> {
         // Process stop queue in reverse order intentionally
-        while let Some((actor_id, reason)) = self.pending_stop.peek() {
+        while let Some((id, reason)) = self.pending_stop.peek() {
             // Check if all dependents have already stopped
-            if !self.check_stop_dependents(actor_id)? {
+            if !self.check_stop_dependents(id)? {
                 continue;
             }
 
             // We verified this actor can be removed, so pop it from the queue
-            self.pending_stop.pop();
-            self.process_stop_actor(actor_id, reason)?;
+            self.pending_stop.pop()?;
+            self.process_stop_actor(id, reason)?;
         }
 
         Ok(())
     }
 
-    fn process_stop_actor(&mut self, actor_id: ActorId, reason: StopReason) -> Result<(), Error> {
+    fn process_stop_actor(&mut self, id: Id, reason: StopReason) -> Result<(), Error> {
         event!(Level::DEBUG, ?reason, "stopping actor");
 
-        let _node = self.tree.remove(actor_id).context("actor not found")?;
+        let _node = self.tree.remove(id).context("actor not found")?;
 
         // Remove queue entries for the actor
-        self.pending_process.retain(|id| *id != actor_id);
+        self.pending_process.retain(|pid| *pid != id);
 
         Ok(())
     }
 
-    fn check_stop_dependents(&mut self, actor_id: ActorId) -> Result<bool, Error> {
+    fn check_stop_dependents(&mut self, id: Id) -> Result<bool, Error> {
         let mut ready = true;
 
         // Check if this actor has any children to process first
-        self.tree.query_children(actor_id, |child| {
+        self.tree.query_children(id, |child| {
             self.pending_stop
                 .enqueue(child, StopReason::ParentStopping)?;
             ready = false;
@@ -236,15 +238,21 @@ impl Drop for World {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum StopReason {
+    StopCalled,
+    ParentStopping,
+}
+
 /// Typed system address of an actor, used for sending messages to the actor.
 ///
-/// This address can only be used with one specific system. Using it with another system is
+/// This address can only be used with one specific world. Using it with another world is
 /// not unsafe, but may result in unexpected behavior.
 ///
 /// When distributing work between systems, you can use an 'envoy' actor that relays messages from
 /// one system to another. For example, using an MPSC channel, or even across network.
 pub struct Addr<M> {
-    actor: ActorId,
+    actor: Id,
     _m: PhantomData<AtomicPtr<M>>,
 }
 
@@ -252,7 +260,7 @@ impl<M> Addr<M> {
     /// Create a new typed address for an actor.
     ///
     /// Message type is not checked here, but will be validated on sending.
-    pub fn new(actor: ActorId) -> Self {
+    pub fn new(actor: Id) -> Self {
         Self {
             actor,
             _m: PhantomData,

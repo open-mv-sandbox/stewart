@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Error};
-use stewart::{Actor, ActorId, Addr, Options, StartError, State, World};
+use stewart::{Actor, Id, Addr, Options, StartError, State, World};
 use tracing::{event, Level};
 use tracing_test::traced_test;
 
@@ -69,7 +69,7 @@ fn given_parent_child(world: &mut World) -> Result<(ActorInfo, ActorInfo), Error
     Ok((parent, child))
 }
 
-fn given_actor<'a>(world: &mut World, parent: Option<ActorId>) -> Result<ActorInfo, Error> {
+fn given_actor<'a>(world: &mut World, parent: Option<Id>) -> Result<ActorInfo, Error> {
     let actor = world.create(parent, Options::default())?;
 
     let instance = TestActor::default();
@@ -92,7 +92,7 @@ fn when_sent_message_to(world: &mut World, addr: Addr<()>) -> Result<(), Error> 
 }
 
 struct ActorInfo {
-    id: ActorId,
+    id: Id,
     addr: Addr<()>,
     count: Rc<AtomicUsize>,
 }

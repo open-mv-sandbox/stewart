@@ -2,22 +2,24 @@ use std::collections::BTreeSet;
 
 use anyhow::{Context, Error};
 
-use crate::ActorId;
-
-pub struct StopQueue {
-    queue: Vec<(ActorId, StopReason)>,
-    set: BTreeSet<ActorId>,
+pub struct UniqueQueue<V, R> {
+    queue: Vec<(V, R)>,
+    set: BTreeSet<V>,
 }
 
-impl StopQueue {
+impl<V, R> UniqueQueue<V, R>
+where
+    V: Ord + PartialEq + Clone,
+    R: Clone,
+{
     // Push or bump an entry in the queue.
-    pub fn enqueue(&mut self, value: ActorId, reason: StopReason) -> Result<(), Error> {
+    pub fn enqueue(&mut self, value: V, reason: R) -> Result<(), Error> {
         // Check if it's already in the queue, if it is remove it so we can move it to the end
-        if !self.set.insert(value) {
+        if !self.set.insert(value.clone()) {
             let index = self
                 .queue
                 .iter()
-                .position(|v| v.0 == value)
+                .position(|(v, _)| *v == value)
                 .context("value in pending stop set, but not in list")?;
             self.queue.remove(index);
         }
@@ -28,30 +30,26 @@ impl StopQueue {
         Ok(())
     }
 
-    pub fn peek(&self) -> Option<(ActorId, StopReason)> {
+    pub fn peek(&self) -> Option<(V, R)> {
         self.queue.last().cloned()
     }
 
-    pub fn pop(&mut self) {
-        self.queue.pop();
+    pub fn pop(&mut self) -> Result<(), Error> {
+        let (value, _) = self.queue.pop().context("failed to pop queue value")?;
+        self.set.remove(&value);
+        Ok(())
     }
 
-    pub fn contains(&self, value: ActorId) -> bool {
+    pub fn contains(&self, value: V) -> bool {
         self.set.contains(&value)
     }
 }
 
-impl Default for StopQueue {
+impl<V, R> Default for UniqueQueue<V, R> {
     fn default() -> Self {
         Self {
             queue: Default::default(),
             set: Default::default(),
         }
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum StopReason {
-    StopCalled,
-    ParentStopping,
 }
