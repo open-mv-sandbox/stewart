@@ -10,9 +10,10 @@ fn main() -> Result<(), Error> {
     utils::init_logging();
 
     let mut world = World::new();
+    let mut ctx = world.root();
 
     // Start the hello service
-    let service = start_hello_service(&mut world, "Example".to_string())?;
+    let service = start_hello_service(&mut ctx, "Example".to_string())?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -31,25 +32,25 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{Actor, Addr, Id, Options, State, World};
+    use stewart::{Actor, Addr, Context, Options, State};
     use tracing::{event, instrument, Level};
 
     /// Start a hello service on the current actor world.
     #[instrument(skip_all, fields(name = name))]
     pub fn start_hello_service(
-        world: &mut World,
+        ctx: &mut Context,
         name: String,
     ) -> Result<Addr<HelloMesage>, Error> {
         event!(Level::INFO, "starting");
 
         // Create the actor in the world
-        let id = world.create(None, Options::default())?;
+        let mut ctx = ctx.create(Options::default())?;
 
         // Start the actor
-        let actor = HelloService { id, name };
-        world.start(id, actor)?;
+        let actor = HelloService { name };
+        ctx.start(actor)?;
 
-        Ok(Addr::new(id))
+        Ok(ctx.addr()?)
     }
 
     pub enum HelloMesage {
@@ -60,7 +61,6 @@ mod hello_service {
     // The actor implementation below remains entirely private to the module.
 
     struct HelloService {
-        id: Id,
         name: String,
     }
 
@@ -68,7 +68,7 @@ mod hello_service {
         type Message = HelloMesage;
 
         #[instrument("hello_service", skip_all, fields(name = self.name))]
-        fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
+        fn process(&mut self, ctx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
             while let Some(message) = state.next() {
@@ -79,7 +79,7 @@ mod hello_service {
                     }
                     HelloMesage::Stop => {
                         event!(Level::INFO, "stopping service");
-                        world.stop(self.id)?;
+                        ctx.stop()?;
                     }
                 }
             }

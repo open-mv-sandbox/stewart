@@ -3,10 +3,10 @@ use std::{
     collections::VecDeque,
 };
 
-use anyhow::{Context, Error};
+use anyhow::{Context as _, Error};
 use tracing::{event, Level};
 
-use crate::World;
+use crate::Context;
 
 /// Actor processing system trait.
 pub trait Actor: Sized + 'static {
@@ -14,7 +14,7 @@ pub trait Actor: Sized + 'static {
     type Message;
 
     /// Perform a processing step.
-    fn process(&mut self, world: &mut World, state: &mut State<Self>) -> Result<(), Error>;
+    fn process(&mut self, ctx: &mut Context, state: &mut State<Self>) -> Result<(), Error>;
 }
 
 /// Options to inform the world on how to schedule an actor.
@@ -50,7 +50,7 @@ pub trait AnyActorEntry {
     fn enqueue(&mut self, slot: &mut dyn Any) -> Result<(), Error>;
 
     /// Process pending messages.
-    fn process(&mut self, world: &mut World);
+    fn process(&mut self, ctx: &mut Context);
 }
 
 pub struct ActorEntry<S>
@@ -94,8 +94,8 @@ where
         Ok(())
     }
 
-    fn process(&mut self, world: &mut World) {
-        let result = self.actor.process(world, &mut self.state);
+    fn process(&mut self, ctx: &mut Context) {
+        let result = self.actor.process(ctx, &mut self.state);
 
         if !self.state.queue.is_empty() {
             event!(Level::WARN, "system did not process all pending messages");

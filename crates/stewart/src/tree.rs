@@ -65,8 +65,7 @@ impl Tree {
     }
 }
 
-/// Handle referencing an actor in a `World`.
-#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy)]
 pub struct Id {
     index: Index,
 }

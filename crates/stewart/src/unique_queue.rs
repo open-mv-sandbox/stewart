@@ -1,15 +1,15 @@
-use std::collections::BTreeSet;
+use std::{collections::HashSet, hash::Hash};
 
 use anyhow::{Context, Error};
 
 pub struct UniqueQueue<V, R> {
     queue: Vec<(V, R)>,
-    set: BTreeSet<V>,
+    set: HashSet<V>,
 }
 
 impl<V, R> UniqueQueue<V, R>
 where
-    V: Ord + PartialEq + Clone,
+    V: Hash + Eq + PartialEq + Clone,
     R: Clone,
 {
     // Push or bump an entry in the queue.

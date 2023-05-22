@@ -6,6 +6,7 @@
 //! stewart book.
 
 mod actor;
+mod context;
 mod tree;
 mod unique_queue;
 mod world;
@@ -15,7 +16,7 @@ use thiserror::Error;
 
 pub use self::{
     actor::{Actor, Options, State},
-    tree::Id,
+    context::Context,
     world::{Addr, World},
 };
 
@@ -32,6 +33,9 @@ pub enum CreateError {
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum StartError {
+    /// Can't start root.
+    #[error("cant start root")]
+    CantStartRoot,
     /// The actor has already been started.
     #[error("actor already started")]
     ActorAlreadyStarted,
@@ -44,7 +48,3 @@ pub enum StartError {
 #[derive(Error, Debug)]
 #[error("internal error, this is a bug")]
 pub struct InternalError(#[from] Error);
-
-// TODO: Consider if all API functions should either return at least `Result<?, InternalError>`,
-// or if internal errors shouldn't ever be 'leaked'. They probably should be bubbled up, because
-// an internal error ignored could lead to security bugs.

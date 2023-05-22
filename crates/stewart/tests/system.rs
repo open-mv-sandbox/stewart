@@ -3,8 +3,8 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use anyhow::{Context, Error};
-use stewart::{Actor, Id, Addr, Options, StartError, State, World};
+use anyhow::{Context as _, Error};
+use stewart::{Actor, Addr, Context, Options, StartError, State, World};
 use tracing::{event, Level};
 use tracing_test::traced_test;
 
@@ -12,14 +12,14 @@ use tracing_test::traced_test;
 #[traced_test]
 fn send_message_to_actor() -> Result<(), Error> {
     let mut world = World::new();
-    let (parent, _child) = given_parent_child(&mut world)?;
+    let mut ctx = world.root();
+    let (parent, _child) = given_parent_child(&mut ctx)?;
 
     // Regular send
     when_sent_message_to(&mut world, parent.addr)?;
     assert_eq!(parent.count.load(Ordering::SeqCst), 1);
 
-    // Can't send to stopped
-    world.stop(parent.id)?;
+    // Actor should now be stopped, can't send to stopped
     when_sent_message_to(&mut world, parent.addr)?;
     assert_eq!(parent.count.load(Ordering::SeqCst), 1);
 
@@ -30,9 +30,12 @@ fn send_message_to_actor() -> Result<(), Error> {
 #[traced_test]
 fn stop_actors() -> Result<(), Error> {
     let mut world = World::new();
-    let (parent, child) = given_parent_child(&mut world)?;
+    let mut ctx = world.root();
+    let (parent, child) = given_parent_child(&mut ctx)?;
 
-    world.stop(parent.id)?;
+    // Stop parent
+    world.send(parent.addr, ());
+    world.run_until_idle()?;
 
     // Can't send message to child as it should be stopped too
     when_sent_message_to(&mut world, child.addr).context("test: failed to send message")?;
@@ -45,14 +48,15 @@ fn stop_actors() -> Result<(), Error> {
 #[traced_test]
 fn not_started_removed() -> Result<(), Error> {
     let mut world = World::new();
+    let mut ctx = world.root();
 
-    let actor = world.create(None, Options::default())?;
+    let mut ctx = ctx.create(Options::default())?;
 
     // Process, this should remove the stale actor
-    world.run_until_idle()?;
+    ctx.run_until_idle()?;
 
     // Make sure we can't start
-    let result = world.start(actor, TestActor::default());
+    let result = ctx.start(TestActor::default());
     if let Err(StartError::ActorNotFound) = result {
         event!(Level::INFO, "correct result");
     } else {
@@ -62,27 +66,26 @@ fn not_started_removed() -> Result<(), Error> {
     Ok(())
 }
 
-fn given_parent_child(world: &mut World) -> Result<(ActorInfo, ActorInfo), Error> {
-    let parent = given_actor(world, None)?;
-    let child = given_actor(world, Some(parent.id))?;
+fn given_parent_child(ctx: &mut Context) -> Result<(ActorInfo, ActorInfo), Error> {
+    let (mut ctx, parent) = given_actor(ctx)?;
+    let (_, child) = given_actor(&mut ctx)?;
 
     Ok((parent, child))
 }
 
-fn given_actor<'a>(world: &mut World, parent: Option<Id>) -> Result<ActorInfo, Error> {
-    let actor = world.create(parent, Options::default())?;
+fn given_actor<'a>(ctx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
+    let mut ctx = ctx.create(Options::default())?;
 
     let instance = TestActor::default();
     let count = instance.count.clone();
-    world.start(actor, instance)?;
+    ctx.start(instance)?;
 
     let info = ActorInfo {
-        id: actor,
-        addr: Addr::new(actor),
+        addr: ctx.addr()?,
         count,
     };
 
-    Ok(info)
+    Ok((ctx, info))
 }
 
 fn when_sent_message_to(world: &mut World, addr: Addr<()>) -> Result<(), Error> {
@@ -92,7 +95,6 @@ fn when_sent_message_to(world: &mut World, addr: Addr<()>) -> Result<(), Error> 
 }
 
 struct ActorInfo {
-    id: Id,
     addr: Addr<()>,
     count: Rc<AtomicUsize>,
 }
@@ -105,10 +107,12 @@ struct TestActor {
 impl Actor for TestActor {
     type Message = ();
 
-    fn process(&mut self, _world: &mut World, state: &mut State<Self>) -> Result<(), Error> {
+    fn process(&mut self, ctx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
         while let Some(_) = state.next() {
             self.count.fetch_add(1, Ordering::SeqCst);
         }
+
+        ctx.stop()?;
 
         Ok(())
     }

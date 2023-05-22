@@ -1,13 +1,13 @@
 use std::{collections::VecDeque, marker::PhantomData, sync::atomic::AtomicPtr};
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, Context as _, Error};
 use tracing::{event, instrument, Level};
 
 use crate::{
     actor::{Actor, ActorEntry},
-    tree::{Node, Tree},
+    tree::{Id, Node, Tree},
     unique_queue::UniqueQueue,
-    CreateError, Id, InternalError, Options, StartError,
+    Context, CreateError, InternalError, Options, StartError,
 };
 
 /// Thread-local actor world.
@@ -26,11 +26,21 @@ impl World {
         Self::default()
     }
 
-    /// Create a new actor.
+    /// Get root context, not associated with any actor.
     ///
-    /// The actor's address will not be available for handling messages until `start` is called.
-    #[instrument(skip_all)]
-    pub fn create(&mut self, parent: Option<Id>, options: Options) -> Result<Id, CreateError> {
+    /// You can use this to create actors with no parents, letting them manage their own lifetime
+    /// entirely. Be careful with this, as parent cleanup prevents using resources unnecessarily,
+    /// even in case of errors.
+    pub fn root(&mut self) -> Context {
+        Context::new(self, None)
+    }
+
+    #[instrument("World::crate", skip_all)]
+    pub(crate) fn create(
+        &mut self,
+        parent: Option<Id>,
+        options: Options,
+    ) -> Result<Id, CreateError> {
         event!(Level::DEBUG, "creating actor");
 
         let node = Node::new(parent, options);
@@ -41,9 +51,8 @@ impl World {
         Ok(actor)
     }
 
-    /// Start an actor instance, making it available for handling messages.
-    #[instrument(skip_all)]
-    pub fn start<A>(&mut self, id: Id, actor: A) -> Result<(), StartError>
+    #[instrument("World::start", skip_all)]
+    pub(crate) fn start<A>(&mut self, id: Id, actor: A) -> Result<(), StartError>
     where
         A: Actor,
     {
@@ -70,12 +79,7 @@ impl World {
         Ok(())
     }
 
-    /// Queue an actor for stopping.
-    ///
-    /// After stopping an actor will no longer accept messages, but can still process them.
-    /// After the current process step is done, the actor and all remaining pending messages will
-    /// be dropped.
-    pub fn stop(&mut self, actor: Id) -> Result<(), Error> {
+    pub(crate) fn stop(&mut self, actor: Id) -> Result<(), InternalError> {
         self.pending_stop.enqueue(actor, StopReason::StopCalled)?;
         Ok(())
     }
@@ -158,7 +162,8 @@ impl World {
         let mut actor = node.entry_mut().take().context("system unavailable")?;
 
         // Run the process handler
-        actor.process(self);
+        let mut ctx = Context::new(self, Some(id));
+        actor.process(&mut ctx);
 
         // Return the system
         let slot = self
@@ -257,10 +262,7 @@ pub struct Addr<M> {
 }
 
 impl<M> Addr<M> {
-    /// Create a new typed address for an actor.
-    ///
-    /// Message type is not checked here, but will be validated on sending.
-    pub fn new(actor: Id) -> Self {
+    pub(crate) fn new(actor: Id) -> Self {
         Self {
             actor,
             _m: PhantomData,
