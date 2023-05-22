@@ -8,6 +8,7 @@
 mod actor;
 mod any;
 mod context;
+mod sender;
 mod tree;
 mod unique_queue;
 mod world;
@@ -17,8 +18,9 @@ use thiserror::Error;
 
 pub use self::{
     actor::{Actor, Options, State},
-    context::{AddrError, Context, StartError},
-    world::{Addr, World},
+    context::{Context, StartError},
+    sender::Sender,
+    world::World,
 };
 
 /// Internal error, this is always a bug.

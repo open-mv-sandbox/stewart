@@ -1,12 +1,13 @@
-use std::{collections::VecDeque, marker::PhantomData, sync::atomic::AtomicPtr};
+use std::collections::VecDeque;
 
 use anyhow::{bail, Context as _, Error};
+use thunderdome::Index;
 use tracing::{event, instrument, Level};
 
 use crate::{
     actor::Actor,
     any::ActorEntry,
-    tree::{Id, Node, Tree},
+    tree::{Node, Tree},
     unique_queue::UniqueQueue,
     Context, InternalError, Options, StartError,
 };
@@ -16,9 +17,9 @@ use crate::{
 pub struct World {
     tree: Tree,
 
-    pending_process: VecDeque<Id>,
-    pending_start: Vec<Id>,
-    pending_stop: UniqueQueue<Id, StopReason>,
+    pending_process: VecDeque<Index>,
+    pending_start: Vec<Index>,
+    pending_stop: UniqueQueue<Index, StopReason>,
 }
 
 impl World {
@@ -36,8 +37,11 @@ impl World {
         Context::new(self, None)
     }
 
-    #[instrument("World::create", skip_all)]
-    pub(crate) fn create(&mut self, parent: Option<Id>, options: Options) -> Result<Id, Error> {
+    pub(crate) fn create(
+        &mut self,
+        parent: Option<Index>,
+        options: Options,
+    ) -> Result<Index, Error> {
         event!(Level::DEBUG, "creating actor");
 
         let node = Node::new(parent, options);
@@ -48,18 +52,17 @@ impl World {
         Ok(actor)
     }
 
-    #[instrument("World::start", skip_all)]
-    pub(crate) fn start<A>(&mut self, id: Id, actor: A) -> Result<(), StartError>
+    pub(crate) fn start<A>(&mut self, index: Index, actor: A) -> Result<(), StartError>
     where
         A: Actor,
     {
         event!(Level::DEBUG, "starting actor");
 
         // Find the node for the actor
-        let node = self.tree.get_mut(id).ok_or(StartError::ActorNotFound)?;
+        let node = self.tree.get_mut(index).ok_or(StartError::ActorNotFound)?;
 
         // Validate if it's not started yet
-        let maybe_index = self.pending_start.iter().position(|v| *v == id);
+        let maybe_index = self.pending_start.iter().position(|v| *v == index);
         let pending_index = if let Some(value) = maybe_index {
             value
         } else {
@@ -76,41 +79,22 @@ impl World {
         Ok(())
     }
 
-    pub(crate) fn stop(&mut self, actor: Id) -> Result<(), InternalError> {
-        self.pending_stop.enqueue(actor, StopReason::StopCalled)?;
+    pub(crate) fn stop(&mut self, index: Index) -> Result<(), InternalError> {
+        self.pending_stop.enqueue(index, StopReason::StopCalled)?;
         Ok(())
     }
 
-    /// Send a message to an actor.
-    ///
-    /// This will never be handled in-place. The world will queue up the message to be processed
-    /// at a later time.
-    #[instrument(skip_all)]
-    pub fn send<M>(&mut self, addr: Addr<M>, message: M)
-    where
-        M: 'static,
-    {
-        let result = self.try_send(addr.actor, message);
-
-        // TODO: What to do with this error?
-        // Sending failures are currently ignored, but maybe we should have a unified message
-        // error system.
-        if let Err(error) = result {
-            event!(Level::ERROR, ?error, "failed to send message");
-        }
-    }
-
-    fn try_send<M>(&mut self, id: Id, message: M) -> Result<(), Error>
+    pub(crate) fn send<M>(&mut self, index: Index, message: M) -> Result<(), Error>
     where
         M: 'static,
     {
         // Make sure the actor's not already being stopped
-        if self.pending_stop.contains(id) {
+        if self.pending_stop.contains(index) {
             bail!("actor stopping");
         }
 
         // Get the actor in tree
-        let node = self.tree.get_mut(id).context("actor not found")?;
+        let node = self.tree.get_mut(index).context("actor not found")?;
         let entry = node.entry_mut().as_mut().context("actor unavailable")?;
 
         // Hand the message to the actor
@@ -119,22 +103,22 @@ impl World {
 
         // Queue for later processing
         let high_priority = node.options().high_priority;
-        self.queue_process(id, high_priority);
+        self.queue_process(index, high_priority);
 
         Ok(())
     }
 
-    fn queue_process(&mut self, id: Id, high_priority: bool) {
-        if self.pending_process.contains(&id) {
+    fn queue_process(&mut self, index: Index, high_priority: bool) {
+        if self.pending_process.contains(&index) {
             event!(Level::TRACE, "actor already queued for processing");
             return;
         }
 
         event!(Level::TRACE, high_priority, "queueing actor for processing");
         if !high_priority {
-            self.pending_process.push_back(id);
+            self.pending_process.push_back(index);
         } else {
-            self.pending_process.push_front(id);
+            self.pending_process.push_front(index);
         }
     }
 
@@ -153,19 +137,19 @@ impl World {
         Ok(())
     }
 
-    fn process_actor(&mut self, id: Id) -> Result<(), Error> {
+    fn process_actor(&mut self, index: Index) -> Result<(), Error> {
         // Borrow the actor
-        let node = self.tree.get_mut(id).context("failed to find actor")?;
+        let node = self.tree.get_mut(index).context("failed to find actor")?;
         let mut actor = node.entry_mut().take().context("actor unavailable")?;
 
         // Run the process handler
-        let mut ctx = Context::new(self, Some(id));
+        let mut ctx = Context::new(self, Some(index));
         actor.process(&mut ctx);
 
         // Return the actor
         let slot = self
             .tree
-            .get_mut(id)
+            .get_mut(index)
             .context("failed to find actor for return")?;
         *slot.entry_mut() = Some(actor);
 
@@ -200,22 +184,22 @@ impl World {
         Ok(())
     }
 
-    fn process_stop_actor(&mut self, id: Id, reason: StopReason) -> Result<(), Error> {
+    fn process_stop_actor(&mut self, index: Index, reason: StopReason) -> Result<(), Error> {
         event!(Level::DEBUG, ?reason, "stopping actor");
 
-        let _node = self.tree.remove(id).context("actor not found")?;
+        let _node = self.tree.remove(index).context("actor not found")?;
 
         // Remove queue entries for the actor
-        self.pending_process.retain(|pid| *pid != id);
+        self.pending_process.retain(|pid| *pid != index);
 
         Ok(())
     }
 
-    fn check_stop_dependents(&mut self, id: Id) -> Result<bool, Error> {
+    fn check_stop_dependents(&mut self, index: Index) -> Result<bool, Error> {
         let mut ready = true;
 
         // Check if this actor has any children to process first
-        self.tree.query_children(id, |child| {
+        self.tree.query_children(index, |child| {
             self.pending_stop
                 .enqueue(child, StopReason::ParentStopping)?;
             ready = false;
@@ -245,32 +229,3 @@ pub enum StopReason {
     StopCalled,
     ParentStopping,
 }
-
-/// Typed world address of an actor, used for sending messages to the actor.
-///
-/// This address can only be used with one specific world. Using it with another world is
-/// not unsafe, but may result in unexpected behavior.
-///
-/// When distributing work between worlds, you can use an 'envoy' actor that relays messages from
-/// one world to another. For example, using an MPSC channel, or even across network.
-pub struct Addr<M> {
-    actor: Id,
-    _m: PhantomData<AtomicPtr<M>>,
-}
-
-impl<M> Addr<M> {
-    pub(crate) fn new(actor: Id) -> Self {
-        Self {
-            actor,
-            _m: PhantomData,
-        }
-    }
-}
-
-impl<M> Clone for Addr<M> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<M> Copy for Addr<M> {}

@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context as _, Error};
-use stewart::{Actor, Addr, Context, Options, StartError, State, World};
+use stewart::{Actor, Context, Options, Sender, StartError, State, World};
 use tracing::{event, Level};
 use tracing_test::traced_test;
 
@@ -16,11 +16,11 @@ fn send_message_to_actor() -> Result<(), Error> {
     let (parent, _child) = given_parent_child(&mut ctx)?;
 
     // Regular send
-    when_sent_message_to(&mut world, parent.addr)?;
+    when_sent_message_to(&mut ctx, parent.sender.clone())?;
     assert_eq!(parent.count.load(Ordering::SeqCst), 1);
 
     // Actor should now be stopped, can't send to stopped
-    when_sent_message_to(&mut world, parent.addr)?;
+    when_sent_message_to(&mut ctx, parent.sender)?;
     assert_eq!(parent.count.load(Ordering::SeqCst), 1);
 
     Ok(())
@@ -34,11 +34,11 @@ fn stop_actors() -> Result<(), Error> {
     let (parent, child) = given_parent_child(&mut ctx)?;
 
     // Stop parent
-    world.send(parent.addr, ());
-    world.run_until_idle()?;
+    parent.sender.send(&mut ctx, ());
+    ctx.run_until_idle()?;
 
     // Can't send message to child as it should be stopped too
-    when_sent_message_to(&mut world, child.addr).context("test: failed to send message")?;
+    when_sent_message_to(&mut ctx, child.sender).context("test: failed to send message")?;
     assert_eq!(child.count.load(Ordering::SeqCst), 0);
 
     Ok(())
@@ -50,7 +50,7 @@ fn not_started_removed() -> Result<(), Error> {
     let mut world = World::new();
     let mut ctx = world.root();
 
-    let mut ctx = ctx.create(Options::default())?;
+    let (mut ctx, _) = ctx.create::<()>(Options::default())?;
 
     // Process, this should remove the stale actor
     ctx.run_until_idle()?;
@@ -74,28 +74,25 @@ fn given_parent_child(ctx: &mut Context) -> Result<(ActorInfo, ActorInfo), Error
 }
 
 fn given_actor<'a>(ctx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
-    let mut ctx = ctx.create(Options::default())?;
+    let (mut ctx, sender) = ctx.create(Options::default())?;
 
     let instance = TestActor::default();
     let count = instance.count.clone();
     ctx.start(instance)?;
 
-    let info = ActorInfo {
-        addr: ctx.addr()?,
-        count,
-    };
+    let info = ActorInfo { sender, count };
 
     Ok((ctx, info))
 }
 
-fn when_sent_message_to(world: &mut World, addr: Addr<()>) -> Result<(), Error> {
-    world.send(addr, ());
-    world.run_until_idle()?;
+fn when_sent_message_to(ctx: &mut Context, sender: Sender<()>) -> Result<(), Error> {
+    sender.send(ctx, ());
+    ctx.run_until_idle()?;
     Ok(())
 }
 
 struct ActorInfo {
-    addr: Addr<()>,
+    sender: Sender<()>,
     count: Rc<AtomicUsize>,
 }
 

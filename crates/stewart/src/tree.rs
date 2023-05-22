@@ -9,41 +9,39 @@ pub struct Tree {
 }
 
 impl Tree {
-    pub fn insert(&mut self, node: Node) -> Result<Id, Error> {
+    pub fn insert(&mut self, node: Node) -> Result<Index, Error> {
         // Link to the parent
         if let Some(parent) = node.parent {
-            self.nodes
-                .get_mut(parent.index)
-                .context("parent not found")?;
+            self.nodes.get_mut(parent).context("parent not found")?;
         }
 
         // Insert the node
         let index = self.nodes.insert(node);
 
-        Ok(Id { index })
+        Ok(index)
     }
 
-    pub fn get_mut(&mut self, actor: Id) -> Option<&mut Node> {
-        self.nodes.get_mut(actor.index)
+    pub fn get_mut(&mut self, actor: Index) -> Option<&mut Node> {
+        self.nodes.get_mut(actor)
     }
 
     /// Remove a node.
     ///
     /// Warning: This doesn't check the node doesn't have any children, leaving those orphaned if
     /// not removed first.
-    pub fn remove(&mut self, actor: Id) -> Option<Node> {
-        self.nodes.remove(actor.index)
+    pub fn remove(&mut self, actor: Index) -> Option<Node> {
+        self.nodes.remove(actor)
     }
 
     /// Query the children of an actor.
-    pub fn query_children<F>(&self, actor: Id, mut on_child: F) -> Result<(), Error>
+    pub fn query_children<F>(&self, actor: Index, mut on_child: F) -> Result<(), Error>
     where
-        F: FnMut(Id) -> Result<(), Error>,
+        F: FnMut(Index) -> Result<(), Error>,
     {
         // TODO: Optimize hierarchy walking
         let children = self.nodes.iter().filter(|(_, n)| n.parent() == Some(actor));
         for (index, _) in children {
-            on_child(Id { index })?;
+            on_child(index)?;
         }
 
         Ok(())
@@ -65,19 +63,14 @@ impl Tree {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
-pub struct Id {
-    index: Index,
-}
-
 pub struct Node {
     entry: Option<Box<dyn AnyActorEntry>>,
-    parent: Option<Id>,
+    parent: Option<Index>,
     options: Options,
 }
 
 impl Node {
-    pub fn new(parent: Option<Id>, options: Options) -> Self {
+    pub fn new(parent: Option<Index>, options: Options) -> Self {
         Self {
             entry: None,
             parent,
@@ -95,7 +88,7 @@ impl Node {
         &self.options
     }
 
-    pub fn parent(&self) -> Option<Id> {
+    pub fn parent(&self) -> Option<Index> {
         self.parent
     }
 }

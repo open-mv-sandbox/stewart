@@ -1,5 +1,3 @@
 //! Small common utilities for stewart.
 
-mod functional;
-
-pub use self::functional::{map, map_once, when};
+// Currently nothing here, used to contain `map` which is now part of `Sender`.

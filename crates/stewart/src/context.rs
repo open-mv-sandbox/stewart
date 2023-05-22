@@ -1,8 +1,10 @@
 use std::ops::{Deref, DerefMut};
 
 use thiserror::Error;
+use thunderdome::Index;
+use tracing::instrument;
 
-use crate::{tree::Id, Actor, Addr, InternalError, Options, World};
+use crate::{Actor, InternalError, Options, Sender, World};
 
 /// Context for world operations.
 ///
@@ -10,31 +12,33 @@ use crate::{tree::Id, Actor, Addr, InternalError, Options, World};
 /// - The current actor performing operations, or root.
 pub struct Context<'a> {
     world: &'a mut World,
-    current: Option<Id>,
+    current: Option<Index>,
 }
 
 impl<'a> Context<'a> {
-    pub(crate) fn new(world: &'a mut World, current: Option<Id>) -> Self {
+    pub(crate) fn new(world: &'a mut World, current: Option<Index>) -> Self {
         Self { world, current }
-    }
-
-    /// Create a new typed address for an actor.
-    ///
-    /// Message type is not checked here, but will be validated on sending.
-    pub fn addr<M>(&self) -> Result<Addr<M>, AddrError> {
-        let id = self.current.ok_or(AddrError::CantGetRootAddr)?;
-        Ok(Addr::new(id))
     }
 
     /// Create a new actor.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
-    pub fn create(&mut self, options: Options) -> Result<Context, InternalError> {
-        let id = self.world.create(self.current, options)?;
-        Ok(Context::new(self.world, Some(id)))
+    #[instrument("Context::create", skip_all)]
+    pub fn create<M>(&mut self, options: Options) -> Result<(Context, Sender<M>), InternalError>
+    where
+        M: 'static,
+    {
+        // TODO: Ensure correct message type and actor are associated
+
+        let index = self.world.create(self.current, options)?;
+        let sender = Sender::direct(index);
+
+        let ctx = Context::new(self.world, Some(index));
+        Ok((ctx, sender))
     }
 
     /// Start the current actor instance, making it available for handling messages.
+    #[instrument("Context::start", skip_all)]
     pub fn start<A>(&mut self, actor: A) -> Result<(), StartError>
     where
         A: Actor,
@@ -65,15 +69,6 @@ impl<'a> DerefMut for Context<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.world
     }
-}
-
-/// Error on getting address.
-#[derive(Error, Debug)]
-#[non_exhaustive]
-pub enum AddrError {
-    /// Can't get the addr of root.
-    #[error("cant get addr of root")]
-    CantGetRootAddr,
 }
 
 /// Error on actor starting.
