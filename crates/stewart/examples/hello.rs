@@ -40,7 +40,7 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{Actor, Context, Options, Sender, State};
+    use stewart::{Actor, Context, Sender, State};
     use tracing::{event, instrument, Level};
 
     /// Start a hello service on the current actor world.
@@ -49,7 +49,7 @@ mod hello_service {
         event!(Level::INFO, name, "starting");
 
         // Create the actor in the world
-        let (mut ctx, sender) = ctx.create(Options::default())?;
+        let (mut ctx, sender) = ctx.create()?;
 
         // Start the actor
         let actor = HelloService { name };

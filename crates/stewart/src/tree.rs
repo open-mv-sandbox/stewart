@@ -1,7 +1,7 @@
 use anyhow::{Context, Error};
 use thunderdome::{Arena, Index};
 
-use crate::{any::AnyActorEntry, Options};
+use crate::any::AnyActorEntry;
 
 #[derive(Default)]
 pub struct Tree {
@@ -66,15 +66,13 @@ impl Tree {
 pub struct Node {
     entry: Option<Box<dyn AnyActorEntry>>,
     parent: Option<Index>,
-    options: Options,
 }
 
 impl Node {
-    pub fn new(parent: Option<Index>, options: Options) -> Self {
+    pub fn new(parent: Option<Index>) -> Self {
         Self {
             entry: None,
             parent,
-            options,
         }
     }
 
@@ -82,10 +80,6 @@ impl Node {
         // TODO: This function, can be replaced with some convenience functions
         //  for getting/setting/borrowing/etc actors.
         &mut self.entry
-    }
-
-    pub fn options(&self) -> &Options {
-        &self.options
     }
 
     pub fn parent(&self) -> Option<Index> {

@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context as _, Error};
-use stewart::{Actor, Context, Options, Sender, StartError, State, World};
+use stewart::{Actor, Context, Sender, StartError, State, World};
 use tracing::{event, Level};
 use tracing_test::traced_test;
 
@@ -50,7 +50,7 @@ fn not_started_removed() -> Result<(), Error> {
     let mut world = World::new();
     let mut ctx = world.root();
 
-    let (mut ctx, _) = ctx.create::<()>(Options::default())?;
+    let (mut ctx, _) = ctx.create::<()>()?;
 
     // Process, this should remove the stale actor
     ctx.run_until_idle()?;
@@ -74,7 +74,7 @@ fn given_parent_child(ctx: &mut Context) -> Result<(ActorInfo, ActorInfo), Error
 }
 
 fn given_actor<'a>(ctx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
-    let (mut ctx, sender) = ctx.create(Options::default())?;
+    let (mut ctx, sender) = ctx.create()?;
 
     let instance = TestActor::default();
     let count = instance.count.clone();

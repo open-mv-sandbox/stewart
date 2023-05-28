@@ -17,7 +17,7 @@ use anyhow::Error;
 use thiserror::Error;
 
 pub use self::{
-    actor::{Actor, Options, State},
+    actor::{Actor, State},
     context::{Context, StartError},
     sender::Sender,
     world::World,

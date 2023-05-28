@@ -4,7 +4,7 @@ use thiserror::Error;
 use thunderdome::Index;
 use tracing::instrument;
 
-use crate::{Actor, InternalError, Options, Sender, World};
+use crate::{Actor, InternalError, Sender, World};
 
 /// Context for world operations.
 ///
@@ -24,13 +24,13 @@ impl<'a> Context<'a> {
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
     #[instrument("Context::create", skip_all)]
-    pub fn create<M>(&mut self, options: Options) -> Result<(Context, Sender<M>), InternalError>
+    pub fn create<M>(&mut self) -> Result<(Context, Sender<M>), InternalError>
     where
         M: 'static,
     {
         // TODO: Ensure correct message type and actor are associated
 
-        let index = self.world.create(self.current, options)?;
+        let index = self.world.create(self.current)?;
         let sender = Sender::direct(index);
 
         let ctx = Context::new(self.world, Some(index));

@@ -9,7 +9,7 @@ use crate::{
     any::ActorEntry,
     tree::{Node, Tree},
     unique_queue::UniqueQueue,
-    Context, InternalError, Options, StartError,
+    Context, InternalError, StartError,
 };
 
 /// Thread-local actor world.
@@ -37,14 +37,10 @@ impl World {
         Context::new(self, None)
     }
 
-    pub(crate) fn create(
-        &mut self,
-        parent: Option<Index>,
-        options: Options,
-    ) -> Result<Index, Error> {
+    pub(crate) fn create(&mut self, parent: Option<Index>) -> Result<Index, Error> {
         event!(Level::DEBUG, "creating actor");
 
-        let node = Node::new(parent, options);
+        let node = Node::new(parent);
         let actor = self.tree.insert(node)?;
 
         self.pending_start.push(actor);
@@ -102,24 +98,20 @@ impl World {
         entry.enqueue(&mut message)?;
 
         // Queue for later processing
-        let high_priority = node.options().high_priority;
-        self.queue_process(index, high_priority);
+        self.queue_process(index);
 
         Ok(())
     }
 
-    fn queue_process(&mut self, index: Index, high_priority: bool) {
+    fn queue_process(&mut self, index: Index) {
+        event!(Level::TRACE, "queueing actor for processing");
+
         if self.pending_process.contains(&index) {
-            event!(Level::TRACE, "actor already queued for processing");
+            event!(Level::TRACE, "actor already queued");
             return;
         }
 
-        event!(Level::TRACE, high_priority, "queueing actor for processing");
-        if !high_priority {
-            self.pending_process.push_back(index);
-        } else {
-            self.pending_process.push_front(index);
-        }
+        self.pending_process.push_back(index);
     }
 
     /// Process all pending messages, until none are left.
