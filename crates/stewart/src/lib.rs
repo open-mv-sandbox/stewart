@@ -8,9 +8,8 @@
 mod actor;
 mod any;
 mod context;
+mod schedule;
 mod sender;
-mod tree;
-mod unique_queue;
 mod world;
 
 use anyhow::Error;
@@ -19,6 +18,7 @@ use thiserror::Error;
 pub use self::{
     actor::{Actor, State},
     context::{Context, StartError},
+    schedule::Schedule,
     sender::Sender,
     world::World,
 };

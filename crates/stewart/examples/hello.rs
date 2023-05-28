@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::World;
+use stewart::{Context, Schedule, World};
 use tracing::{event, Level};
 
 use crate::hello_service::{HelloAction, HelloMessage};
@@ -9,8 +9,9 @@ use crate::hello_service::{HelloAction, HelloMessage};
 fn main() -> Result<(), Error> {
     utils::init_logging();
 
-    let mut world = World::new();
-    let mut ctx = world.root();
+    let mut world = World::default();
+    let mut schedule = Schedule::default();
+    let mut ctx = Context::root(&mut world, &mut schedule);
 
     // Start the hello service
     let service = hello_service::start(&mut ctx, "Example".to_string())?;
@@ -32,7 +33,7 @@ fn main() -> Result<(), Error> {
     service.send(&mut ctx, message);
 
     // Process messages
-    world.run_until_idle()?;
+    schedule.run_until_idle(&mut world)?;
 
     Ok(())
 }
@@ -44,7 +45,7 @@ mod hello_service {
     use tracing::{event, instrument, Level};
 
     /// Start a hello service on the current actor world.
-    #[instrument("hello_service", skip_all, fields(name))]
+    #[instrument("HelloService", skip_all, fields(name))]
     pub fn start(ctx: &mut Context, name: String) -> Result<Sender<HelloMessage>, Error> {
         event!(Level::INFO, name, "starting");
 
@@ -79,7 +80,7 @@ mod hello_service {
     impl Actor for HelloService {
         type Message = HelloMessage;
 
-        #[instrument("hello_service", skip_all, fields(name = self.name))]
+        #[instrument("HelloService", skip_all, fields(name = self.name))]
         fn process(&mut self, ctx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 

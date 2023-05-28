@@ -1,61 +1,52 @@
-use std::collections::VecDeque;
-
 use anyhow::{bail, Context as _, Error};
-use thunderdome::Index;
-use tracing::{event, instrument, Level};
+use thunderdome::{Arena, Index};
+use tracing::{event, Level};
 
 use crate::{
-    actor::Actor,
-    any::ActorEntry,
-    tree::{Node, Tree},
-    unique_queue::UniqueQueue,
-    Context, InternalError, StartError,
+    any::{ActorEntry, AnyActorEntry},
+    Actor, Context, Schedule, StartError,
 };
 
-/// Thread-local actor world.
+/// Hierarchical actor collection.
 #[derive(Default)]
 pub struct World {
-    tree: Tree,
-
-    pending_process: VecDeque<Index>,
+    nodes: Arena<Node>,
     pending_start: Vec<Index>,
-    pending_stop: UniqueQueue<Index, StopReason>,
+}
+
+struct Node {
+    entry: Option<Box<dyn AnyActorEntry>>,
+    parent: Option<Index>,
+    is_stopping: bool,
 }
 
 impl World {
-    /// Create a new empty `World`.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Get root context, not associated with any actor.
-    ///
-    /// You can use this to create actors with no parents, letting them manage their own lifetime
-    /// entirely. Be careful with this, as parent cleanup prevents using resources unnecessarily,
-    /// even in case of errors.
-    pub fn root(&mut self) -> Context {
-        Context::new(self, None)
-    }
-
     pub(crate) fn create(&mut self, parent: Option<Index>) -> Result<Index, Error> {
-        event!(Level::DEBUG, "creating actor");
+        // Link to the parent
+        if let Some(parent) = parent {
+            self.nodes.get_mut(parent).context("parent not found")?;
+        }
 
-        let node = Node::new(parent);
-        let actor = self.tree.insert(node)?;
+        // Insert the node
+        let node = Node {
+            parent,
+            entry: None,
+            is_stopping: false,
+        };
+        let index = self.nodes.insert(node);
 
-        self.pending_start.push(actor);
+        // Track that the actor has to be started
+        self.pending_start.push(index);
 
-        Ok(actor)
+        Ok(index)
     }
 
     pub(crate) fn start<A>(&mut self, index: Index, actor: A) -> Result<(), StartError>
     where
         A: Actor,
     {
-        event!(Level::DEBUG, "starting actor");
-
         // Find the node for the actor
-        let node = self.tree.get_mut(index).ok_or(StartError::ActorNotFound)?;
+        let node = self.nodes.get_mut(index).ok_or(StartError::ActorNotFound)?;
 
         // Validate if it's not started yet
         let maybe_index = self.pending_start.iter().position(|v| *v == index);
@@ -67,7 +58,7 @@ impl World {
 
         // Give the actor to the node
         let entry = ActorEntry::new(actor);
-        *node.entry_mut() = Some(Box::new(entry));
+        node.entry = Some(Box::new(entry));
 
         // Finalize remove pending
         self.pending_start.remove(pending_index);
@@ -75,136 +66,110 @@ impl World {
         Ok(())
     }
 
-    pub(crate) fn stop(&mut self, index: Index) -> Result<(), InternalError> {
-        self.pending_stop.enqueue(index, StopReason::StopCalled)?;
-        Ok(())
-    }
-
-    pub(crate) fn send<M>(&mut self, index: Index, message: M) -> Result<(), Error>
-    where
-        M: 'static,
-    {
-        // Make sure the actor's not already being stopped
-        if self.pending_stop.contains(index) {
-            bail!("actor stopping");
-        }
-
-        // Get the actor in tree
-        let node = self.tree.get_mut(index).context("actor not found")?;
-        let entry = node.entry_mut().as_mut().context("actor unavailable")?;
-
-        // Hand the message to the actor
-        let mut message = Some(message);
-        entry.enqueue(&mut message)?;
-
-        // Queue for later processing
-        self.queue_process(index);
-
-        Ok(())
-    }
-
-    fn queue_process(&mut self, index: Index) {
-        event!(Level::TRACE, "queueing actor for processing");
-
-        if self.pending_process.contains(&index) {
-            event!(Level::TRACE, "actor already queued");
-            return;
-        }
-
-        self.pending_process.push_back(index);
-    }
-
-    /// Process all pending messages, until none are left.
-    pub fn run_until_idle(&mut self) -> Result<(), InternalError> {
-        self.process_pending()
-            .context("failed to process pending")?;
-
-        while let Some(id) = self.pending_process.pop_front() {
-            self.process_actor(id).context("failed to process")?;
-
-            self.process_pending()
-                .context("failed to process pending")?;
-        }
-
-        Ok(())
-    }
-
-    fn process_actor(&mut self, index: Index) -> Result<(), Error> {
-        // Borrow the actor
-        let node = self.tree.get_mut(index).context("failed to find actor")?;
-        let mut actor = node.entry_mut().take().context("actor unavailable")?;
-
-        // Run the process handler
-        let mut ctx = Context::new(self, Some(index));
-        actor.process(&mut ctx);
-
-        // Return the actor
-        let slot = self
-            .tree
-            .get_mut(index)
-            .context("failed to find actor for return")?;
-        *slot.entry_mut() = Some(actor);
-
-        Ok(())
-    }
-
-    #[instrument(skip_all)]
-    fn process_pending(&mut self) -> Result<(), Error> {
-        // Remove any actors that weren't started in time
+    /// Remove any actors that weren't started in time
+    pub(crate) fn timeout_starting(&mut self) {
         while let Some(actor) = self.pending_start.pop() {
-            self.stop(actor)?;
+            self.remove(actor);
         }
+    }
 
-        self.process_stop_actors()?;
-
+    pub(crate) fn mark_stopping(&mut self, index: Index) -> Result<(), Error> {
+        let node = self.nodes.get_mut(index).context("failed to find actor")?;
+        node.is_stopping = true;
         Ok(())
     }
 
-    fn process_stop_actors(&mut self) -> Result<(), Error> {
-        // Process stop queue in reverse order intentionally
-        while let Some((id, reason)) = self.pending_stop.peek() {
+    /// Remove actor and its hierarchy.
+    pub(crate) fn remove(&mut self, index: Index) {
+        let mut queue = vec![index];
+
+        while let Some(index) = queue.last().cloned() {
             // Check if all dependents have already stopped
-            if !self.check_stop_dependents(id)? {
+            if !self.check_remove_dependents(index, &mut queue) {
                 continue;
             }
 
-            // We verified this actor can be removed, so pop it from the queue
-            self.pending_stop.pop()?;
-            self.process_stop_actor(id, reason)?;
+            // We verified this actor can be removed, so pop it from the queue and remove it
+            event!(Level::DEBUG, "removing actor");
+            queue.pop();
+            self.nodes.remove(index);
         }
-
-        Ok(())
     }
 
-    fn process_stop_actor(&mut self, index: Index, reason: StopReason) -> Result<(), Error> {
-        event!(Level::DEBUG, ?reason, "stopping actor");
-
-        let _node = self.tree.remove(index).context("actor not found")?;
-
-        // Remove queue entries for the actor
-        self.pending_process.retain(|pid| *pid != index);
-
-        Ok(())
-    }
-
-    fn check_stop_dependents(&mut self, index: Index) -> Result<bool, Error> {
+    /// Returns true if all dependencies have been removed.
+    fn check_remove_dependents(&mut self, index: Index, queue: &mut Vec<Index>) -> bool {
         let mut ready = true;
 
-        // Check if this actor has any children to process first
-        self.tree.query_children(index, |child| {
-            self.pending_stop
-                .enqueue(child, StopReason::ParentStopping)?;
-            ready = false;
-            Ok(())
-        })?;
+        for (child_index, node) in &self.nodes {
+            if node.parent != Some(index) {
+                continue;
+            }
 
-        Ok(ready)
+            queue.push(child_index);
+            ready = false;
+        }
+
+        ready
+    }
+
+    pub(crate) fn queue_message<M>(&mut self, index: Index, message: M) -> Result<(), Error>
+    where
+        M: 'static,
+    {
+        // Get the actor in tree
+        let node = self.nodes.get_mut(index).context("failed to find actor")?;
+
+        // Make sure the actor's not already being stopped
+        if node.is_stopping {
+            bail!("actor stopping");
+        }
+
+        // Hand the message to the actor
+        let entry = node.entry.as_mut().context("actor unavailable")?;
+        let mut message = Some(message);
+        entry.enqueue(&mut message)?;
+
+        Ok(())
+    }
+
+    pub(crate) fn process(&mut self, schedule: &mut Schedule, index: Index) -> Result<(), Error> {
+        // Borrow the actor
+        let node = self.nodes.get_mut(index).context("failed to find actor")?;
+        let mut actor = node.entry.take().context("actor unavailable")?;
+
+        // Run the process handler
+        let mut ctx = Context::new(self, schedule, Some(index));
+        actor.process(&mut ctx);
+
+        // Return the actor
+        let node = self
+            .nodes
+            .get_mut(index)
+            .context("failed to find actor for return")?;
+        node.entry = Some(actor);
+
+        Ok(())
+    }
+
+    fn query_debug_names(&self) -> Vec<&'static str> {
+        let mut names = Vec::new();
+
+        for (_, node) in &self.nodes {
+            let name = node
+                .entry
+                .as_ref()
+                .map(|e| e.debug_name())
+                .unwrap_or("Unknown");
+            names.push(name);
+        }
+
+        names
     }
 }
 
 impl Drop for World {
     fn drop(&mut self) {
-        let debug_names = self.tree.query_debug_names();
+        let debug_names = self.query_debug_names();
 
         if !debug_names.is_empty() {
             event!(
@@ -214,10 +179,4 @@ impl Drop for World {
             );
         }
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum StopReason {
-    StopCalled,
-    ParentStopping,
 }

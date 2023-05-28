@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use anyhow::Error;
 use thunderdome::Index;
 use tracing::{event, instrument, Level};
 
@@ -53,7 +54,7 @@ where
         match &self.apply {
             Apply::Noop => {}
             Apply::Direct(index) => {
-                let result = ctx.send(*index, message);
+                let result = Self::try_send_direct(ctx, *index, message);
 
                 // TODO: What to do with this error?
                 if let Err(error) = result {
@@ -62,6 +63,13 @@ where
             }
             Apply::Callback(callback) => callback(ctx, message),
         }
+    }
+
+    fn try_send_direct(ctx: &mut Context, index: Index, message: M) -> Result<(), Error> {
+        ctx.world_mut().queue_message(index, message)?;
+        ctx.schedule_mut().queue_process(index);
+
+        Ok(())
     }
 }
 

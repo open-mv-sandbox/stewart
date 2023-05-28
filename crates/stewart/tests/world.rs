@@ -1,26 +1,27 @@
 use std::{
     rc::Rc,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use anyhow::{Context as _, Error};
-use stewart::{Actor, Context, Sender, StartError, State, World};
-use tracing::{event, Level};
+use stewart::{Actor, Context, Schedule, Sender, State, World};
 use tracing_test::traced_test;
 
 #[test]
 #[traced_test]
 fn send_message_to_actor() -> Result<(), Error> {
-    let mut world = World::new();
-    let mut ctx = world.root();
+    let mut world = World::default();
+    let mut schedule = Schedule::default();
+
+    let mut ctx = Context::root(&mut world, &mut schedule);
     let (parent, _child) = given_parent_child(&mut ctx)?;
 
     // Regular send
-    when_sent_message_to(&mut ctx, parent.sender.clone())?;
+    when_sent_message_to(&mut world, &mut schedule, parent.sender.clone())?;
     assert_eq!(parent.count.load(Ordering::SeqCst), 1);
 
     // Actor should now be stopped, can't send to stopped
-    when_sent_message_to(&mut ctx, parent.sender)?;
+    when_sent_message_to(&mut world, &mut schedule, parent.sender)?;
     assert_eq!(parent.count.load(Ordering::SeqCst), 1);
 
     Ok(())
@@ -29,16 +30,19 @@ fn send_message_to_actor() -> Result<(), Error> {
 #[test]
 #[traced_test]
 fn stop_actors() -> Result<(), Error> {
-    let mut world = World::new();
-    let mut ctx = world.root();
+    let mut world = World::default();
+    let mut schedule = Schedule::default();
+
+    let mut ctx = Context::root(&mut world, &mut schedule);
     let (parent, child) = given_parent_child(&mut ctx)?;
 
     // Stop parent
     parent.sender.send(&mut ctx, ());
-    ctx.run_until_idle()?;
+    schedule.run_until_idle(&mut world)?;
 
     // Can't send message to child as it should be stopped too
-    when_sent_message_to(&mut ctx, child.sender).context("test: failed to send message")?;
+    when_sent_message_to(&mut world, &mut schedule, child.sender)
+        .context("test: failed to send message")?;
     assert_eq!(child.count.load(Ordering::SeqCst), 0);
 
     Ok(())
@@ -47,21 +51,20 @@ fn stop_actors() -> Result<(), Error> {
 #[test]
 #[traced_test]
 fn not_started_removed() -> Result<(), Error> {
-    let mut world = World::new();
-    let mut ctx = world.root();
+    let mut world = World::default();
+    let mut schedule = Schedule::default();
 
+    let mut ctx = Context::root(&mut world, &mut schedule);
     let (mut ctx, _) = ctx.create::<()>()?;
 
-    // Process, this should remove the stale actor
-    ctx.run_until_idle()?;
+    // Create the child we use as a remove probe
+    let (_, child) = given_actor(&mut ctx)?;
 
-    // Make sure we can't start
-    let result = ctx.start(TestActor::default());
-    if let Err(StartError::ActorNotFound) = result {
-        event!(Level::INFO, "correct result");
-    } else {
-        assert!(false, "incorret result: {:?}", result);
-    }
+    // Process, this should remove the stale actor
+    schedule.run_until_idle(&mut world)?;
+
+    // Check drop happened, using the child actor
+    assert!(child.dropped.load(Ordering::SeqCst));
 
     Ok(())
 }
@@ -78,27 +81,41 @@ fn given_actor<'a>(ctx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Err
 
     let instance = TestActor::default();
     let count = instance.count.clone();
+    let dropped = instance.dropped.clone();
     ctx.start(instance)?;
 
-    let info = ActorInfo { sender, count };
+    let info = ActorInfo {
+        sender,
+        count,
+        dropped,
+    };
 
     Ok((ctx, info))
 }
 
-fn when_sent_message_to(ctx: &mut Context, sender: Sender<()>) -> Result<(), Error> {
-    sender.send(ctx, ());
-    ctx.run_until_idle()?;
+fn when_sent_message_to(
+    world: &mut World,
+    schedule: &mut Schedule,
+    sender: Sender<()>,
+) -> Result<(), Error> {
+    let mut ctx = Context::root(world, schedule);
+    sender.send(&mut ctx, ());
+
+    schedule.run_until_idle(world)?;
+
     Ok(())
 }
 
 struct ActorInfo {
     sender: Sender<()>,
     count: Rc<AtomicUsize>,
+    dropped: Rc<AtomicBool>,
 }
 
 #[derive(Default)]
 struct TestActor {
     count: Rc<AtomicUsize>,
+    dropped: Rc<AtomicBool>,
 }
 
 impl Actor for TestActor {
@@ -112,5 +129,11 @@ impl Actor for TestActor {
         ctx.stop()?;
 
         Ok(())
+    }
+}
+
+impl Drop for TestActor {
+    fn drop(&mut self) {
+        self.dropped.store(true, Ordering::SeqCst);
     }
 }

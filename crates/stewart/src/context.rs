@@ -1,23 +1,47 @@
-use std::ops::{Deref, DerefMut};
-
 use thiserror::Error;
 use thunderdome::Index;
-use tracing::instrument;
+use tracing::{event, instrument, Level};
 
-use crate::{Actor, InternalError, Sender, World};
+use crate::{Actor, InternalError, Schedule, Sender, World};
 
-/// Context for world operations.
+/// Context to perform operations in.
 ///
-/// This includes:
-/// - The current actor performing operations, or root.
+/// This type bundles the other types the actions will be operated on, the world and the schedule,
+/// and the context it will be operated in, such as the current actor.
 pub struct Context<'a> {
-    world: &'a mut World,
+    pub(crate) world: &'a mut World,
+    schedule: &'a mut Schedule,
     current: Option<Index>,
 }
 
 impl<'a> Context<'a> {
-    pub(crate) fn new(world: &'a mut World, current: Option<Index>) -> Self {
-        Self { world, current }
+    pub(crate) fn new(
+        world: &'a mut World,
+        schedule: &'a mut Schedule,
+        current: Option<Index>,
+    ) -> Self {
+        Self {
+            world,
+            schedule,
+            current,
+        }
+    }
+
+    /// Create a 'root' context, not associated with an actor.
+    pub fn root(world: &'a mut World, schedule: &'a mut Schedule) -> Self {
+        Self {
+            world,
+            schedule,
+            current: None,
+        }
+    }
+
+    pub(crate) fn world_mut(&mut self) -> &mut World {
+        &mut self.world
+    }
+
+    pub(crate) fn schedule_mut(&mut self) -> &mut Schedule {
+        &mut self.schedule
     }
 
     /// Create a new actor.
@@ -28,12 +52,18 @@ impl<'a> Context<'a> {
     where
         M: 'static,
     {
+        event!(Level::DEBUG, "creating actor");
+
         // TODO: Ensure correct message type and actor are associated
 
         let index = self.world.create(self.current)?;
         let sender = Sender::direct(index);
 
-        let ctx = Context::new(self.world, Some(index));
+        let ctx = Context {
+            world: self.world,
+            schedule: self.schedule,
+            current: Some(index),
+        };
         Ok((ctx, sender))
     }
 
@@ -43,8 +73,12 @@ impl<'a> Context<'a> {
     where
         A: Actor,
     {
-        let id = self.current.ok_or(StartError::CantStartRoot)?;
-        self.world.start(id, actor)
+        event!(Level::DEBUG, "starting actor");
+
+        let index = self.current.ok_or(StartError::CantStartRoot)?;
+        self.world.start(index, actor)?;
+
+        Ok(())
     }
 
     /// Queue an actor for stopping.
@@ -53,21 +87,12 @@ impl<'a> Context<'a> {
     /// After the current process step is done, the actor and all remaining pending messages will
     /// be dropped.
     pub fn stop(&mut self) -> Result<(), InternalError> {
-        self.current.map(|id| self.world.stop(id)).unwrap_or(Ok(()))
-    }
-}
+        if let Some(index) = self.current {
+            self.world.mark_stopping(index)?;
+            self.schedule.queue_stop(index);
+        }
 
-impl<'a> Deref for Context<'a> {
-    type Target = World;
-
-    fn deref(&self) -> &Self::Target {
-        self.world
-    }
-}
-
-impl<'a> DerefMut for Context<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.world
+        Ok(())
     }
 }
 
