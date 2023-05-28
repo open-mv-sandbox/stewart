@@ -1,8 +1,7 @@
-use thiserror::Error;
 use thunderdome::Index;
 use tracing::{event, instrument, Level};
 
-use crate::{Actor, InternalError, Schedule, Sender, World};
+use crate::{Actor, InternalError, Schedule, Sender, StartError, World};
 
 /// Context to perform operations in.
 ///
@@ -94,19 +93,4 @@ impl<'a> Context<'a> {
 
         Ok(())
     }
-}
-
-/// Error on actor starting.
-#[derive(Error, Debug)]
-#[non_exhaustive]
-pub enum StartError {
-    /// Can't start root.
-    #[error("cant start root")]
-    CantStartRoot,
-    /// The actor has already been started.
-    #[error("actor already started")]
-    ActorAlreadyStarted,
-    /// The actor couldn't be found.
-    #[error("actor not found")]
-    ActorNotFound,
 }
