@@ -6,7 +6,9 @@ use tracing::{event, instrument, Level};
 
 use crate::Context;
 
-/// Typed message sender, optionally bundling message mapping.
+/// Typed abstract message sender.
+///
+/// May send a message to one or more actors, after potentially transforming it.
 pub struct Sender<M> {
     apply: Apply<M>,
 }
