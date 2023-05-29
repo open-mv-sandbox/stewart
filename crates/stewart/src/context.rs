@@ -79,18 +79,4 @@ impl<'a> Context<'a> {
 
         Ok(())
     }
-
-    /// Queue an actor for stopping.
-    ///
-    /// After stopping an actor will no longer accept messages, but can still process them.
-    /// After the current process step is done, the actor and all remaining pending messages will
-    /// be dropped.
-    pub fn stop(&mut self) -> Result<(), InternalError> {
-        if let Some(index) = self.current {
-            self.world.mark_stopping(index)?;
-            self.schedule.queue_stop(index);
-        }
-
-        Ok(())
-    }
 }

@@ -58,12 +58,12 @@ struct MockActor {
 impl Actor for MockActor {
     type Message = ();
 
-    fn process(&mut self, ctx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
+    fn process(&mut self, _ctx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
         while let Some(_) = state.next() {
             self.count.fetch_add(1, Ordering::SeqCst);
         }
 
-        ctx.stop()?;
+        state.stop();
 
         Ok(())
     }

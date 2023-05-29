@@ -1,4 +1,4 @@
-use anyhow::{bail, Context as _, Error};
+use anyhow::{Context as _, Error};
 use thunderdome::{Arena, Index};
 use tracing::{event, Level};
 
@@ -17,7 +17,6 @@ pub struct World {
 struct Node {
     entry: Option<Box<dyn AnyActorEntry>>,
     parent: Option<Index>,
-    is_stopping: bool,
 }
 
 impl World {
@@ -31,7 +30,6 @@ impl World {
         let node = Node {
             parent,
             entry: None,
-            is_stopping: false,
         };
         let index = self.nodes.insert(node);
 
@@ -73,14 +71,50 @@ impl World {
         }
     }
 
-    pub(crate) fn mark_stopping(&mut self, index: Index) -> Result<(), Error> {
+    pub(crate) fn queue_message<M>(&mut self, index: Index, message: M) -> Result<(), Error>
+    where
+        M: 'static,
+    {
+        // Get the actor in tree
         let node = self.nodes.get_mut(index).context("failed to find actor")?;
-        node.is_stopping = true;
+
+        // Hand the message to the actor
+        let entry = node.entry.as_mut().context("actor unavailable")?;
+        let mut message = Some(message);
+        entry.enqueue(&mut message)?;
+
+        Ok(())
+    }
+
+    pub(crate) fn process(&mut self, schedule: &mut Schedule, index: Index) -> Result<(), Error> {
+        event!(Level::DEBUG, "processing actor");
+
+        // Borrow the actor
+        let node = self.nodes.get_mut(index).context("failed to find actor")?;
+        let mut actor = node.entry.take().context("actor unavailable")?;
+
+        // Run the process handler
+        let mut ctx = Context::new(self, schedule, Some(index));
+        actor.process(&mut ctx);
+        let stop = actor.is_stop_requested();
+
+        // Return the actor
+        let node = self
+            .nodes
+            .get_mut(index)
+            .context("failed to find actor for return")?;
+        node.entry = Some(actor);
+
+        // If the actor requested to remove itself, remove it
+        if stop {
+            self.remove(index);
+        }
+
         Ok(())
     }
 
     /// Remove actor and its hierarchy.
-    pub(crate) fn remove(&mut self, index: Index) {
+    fn remove(&mut self, index: Index) {
         let mut queue = vec![index];
 
         while let Some(index) = queue.last().cloned() {
@@ -110,45 +144,6 @@ impl World {
         }
 
         ready
-    }
-
-    pub(crate) fn queue_message<M>(&mut self, index: Index, message: M) -> Result<(), Error>
-    where
-        M: 'static,
-    {
-        // Get the actor in tree
-        let node = self.nodes.get_mut(index).context("failed to find actor")?;
-
-        // Make sure the actor's not already being stopped
-        if node.is_stopping {
-            bail!("actor stopping");
-        }
-
-        // Hand the message to the actor
-        let entry = node.entry.as_mut().context("actor unavailable")?;
-        let mut message = Some(message);
-        entry.enqueue(&mut message)?;
-
-        Ok(())
-    }
-
-    pub(crate) fn process(&mut self, schedule: &mut Schedule, index: Index) -> Result<(), Error> {
-        // Borrow the actor
-        let node = self.nodes.get_mut(index).context("failed to find actor")?;
-        let mut actor = node.entry.take().context("actor unavailable")?;
-
-        // Run the process handler
-        let mut ctx = Context::new(self, schedule, Some(index));
-        actor.process(&mut ctx);
-
-        // Return the actor
-        let node = self
-            .nodes
-            .get_mut(index)
-            .context("failed to find actor for return")?;
-        node.entry = Some(actor);
-
-        Ok(())
     }
 
     fn query_debug_names(&self) -> Vec<&'static str> {

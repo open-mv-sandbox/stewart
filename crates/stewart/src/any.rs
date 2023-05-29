@@ -1,7 +1,4 @@
-use std::{
-    any::{type_name, Any},
-    collections::VecDeque,
-};
+use std::any::{type_name, Any};
 
 use anyhow::{Context as _, Error};
 use tracing::{event, Level};
@@ -10,6 +7,8 @@ use crate::{Actor, Context, State};
 
 pub trait AnyActorEntry {
     fn debug_name(&self) -> &'static str;
+
+    fn is_stop_requested(&self) -> bool;
 
     /// Add a message to be handled to the actor's internal queue.
     fn enqueue(&mut self, slot: &mut dyn Any) -> Result<(), Error>;
@@ -33,9 +32,7 @@ where
     pub fn new(actor: A) -> Self {
         Self {
             actor,
-            state: State {
-                queue: VecDeque::new(),
-            },
+            state: State::default(),
         }
     }
 }
@@ -48,13 +45,17 @@ where
         type_name::<S>()
     }
 
+    fn is_stop_requested(&self) -> bool {
+        self.state.is_stop_requested()
+    }
+
     fn enqueue(&mut self, slot: &mut dyn Any) -> Result<(), Error> {
         // Take the message out
         let slot: &mut Option<S::Message> =
             slot.downcast_mut().context("incorrect message type")?;
         let message = slot.take().context("message not in slot")?;
 
-        self.state.queue.push_back(message);
+        self.state.enqueue(message);
 
         Ok(())
     }
@@ -62,7 +63,7 @@ where
     fn process(&mut self, ctx: &mut Context) {
         let result = self.actor.process(ctx, &mut self.state);
 
-        if !self.state.queue.is_empty() {
+        if !self.state.is_queue_empty() {
             event!(Level::WARN, "actor did not process all pending messages");
         }
 

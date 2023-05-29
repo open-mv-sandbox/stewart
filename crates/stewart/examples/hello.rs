@@ -86,7 +86,7 @@ mod hello_service {
     }
 
     /// Start a hello service on the current actor world.
-    #[instrument("HelloService", skip_all, fields(name))]
+    #[instrument("hello", skip_all, fields(name))]
     pub fn start(ctx: &mut Context, name: String) -> Result<Sender<protocol::Message>, Error> {
         event!(Level::INFO, name, "starting");
 
@@ -110,7 +110,7 @@ mod hello_service {
     impl Actor for Service {
         type Message = protocol::Message;
 
-        #[instrument("HelloService", skip_all, fields(name = self.name))]
+        #[instrument("hello", skip_all, fields(name = self.name))]
         fn process(&mut self, ctx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
@@ -123,7 +123,7 @@ mod hello_service {
                     protocol::Action::Stop { on_result } => {
                         event!(Level::INFO, "stopping service");
 
-                        ctx.stop()?;
+                        state.stop();
                         on_result.send(ctx, message.id);
                     }
                 }
