@@ -14,7 +14,7 @@ pub fn given_parent_child(ctx: &mut Context) -> Result<(ActorInfo, ActorInfo), E
 }
 
 pub fn given_actor<'a>(ctx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
-    let (mut ctx, sender) = ctx.create()?;
+    let (mut ctx, sender) = ctx.create("mock-actor")?;
 
     let instance = MockActor::default();
     let count = instance.count.clone();

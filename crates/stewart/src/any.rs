@@ -1,4 +1,4 @@
-use std::any::{type_name, Any};
+use std::any::Any;
 
 use anyhow::{Context as _, Error};
 use tracing::{event, Level};
@@ -6,8 +6,6 @@ use tracing::{event, Level};
 use crate::{Actor, Context, State};
 
 pub trait AnyActorEntry {
-    fn debug_name(&self) -> &'static str;
-
     fn is_stop_requested(&self) -> bool;
 
     /// Add a message to be handled to the actor's internal queue.
@@ -41,10 +39,6 @@ impl<S> AnyActorEntry for ActorEntry<S>
 where
     S: Actor,
 {
-    fn debug_name(&self) -> &'static str {
-        type_name::<S>()
-    }
-
     fn is_stop_requested(&self) -> bool {
         self.state.is_stop_requested()
     }

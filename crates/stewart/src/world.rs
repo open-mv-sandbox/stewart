@@ -1,6 +1,6 @@
 use anyhow::{Context as _, Error};
 use thunderdome::{Arena, Index};
-use tracing::{event, Level};
+use tracing::{event, span, Level};
 
 use crate::{
     any::{ActorEntry, AnyActorEntry},
@@ -15,12 +15,17 @@ pub struct World {
 }
 
 struct Node {
-    entry: Option<Box<dyn AnyActorEntry>>,
+    name: &'static str,
     parent: Option<Index>,
+    entry: Option<Box<dyn AnyActorEntry>>,
 }
 
 impl World {
-    pub(crate) fn create(&mut self, parent: Option<Index>) -> Result<Index, Error> {
+    pub(crate) fn create(
+        &mut self,
+        name: &'static str,
+        parent: Option<Index>,
+    ) -> Result<Index, Error> {
         // Link to the parent
         if let Some(parent) = parent {
             self.nodes.get_mut(parent).context("parent not found")?;
@@ -28,6 +33,7 @@ impl World {
 
         // Insert the node
         let node = Node {
+            name,
             parent,
             entry: None,
         };
@@ -87,11 +93,13 @@ impl World {
     }
 
     pub(crate) fn process(&mut self, schedule: &mut Schedule, index: Index) -> Result<(), Error> {
-        event!(Level::DEBUG, "processing actor");
-
         // Borrow the actor
         let node = self.nodes.get_mut(index).context("failed to find actor")?;
         let mut actor = node.entry.take().context("actor unavailable")?;
+
+        let span = span!(Level::INFO, "actor", name = node.name);
+        let _entered = span.enter();
+        event!(Level::DEBUG, "processing actor");
 
         // Run the process handler
         let mut ctx = Context::new(self, schedule, Some(index));
@@ -150,12 +158,7 @@ impl World {
         let mut names = Vec::new();
 
         for (_, node) in &self.nodes {
-            let name = node
-                .entry
-                .as_ref()
-                .map(|e| e.debug_name())
-                .unwrap_or("Unknown");
-            names.push(name);
+            names.push(node.name);
         }
 
         names

@@ -46,8 +46,10 @@ impl<'a> Context<'a> {
     /// Create a new actor.
     ///
     /// The actor's address will not be available for handling messages until `start` is called.
-    #[instrument("Context::create", skip_all)]
-    pub fn create<M>(&mut self) -> Result<(Context, Sender<M>), InternalError>
+    ///
+    /// The given `name` will be used in logging.
+    #[instrument("Context::create", level = "debug", skip_all, fields(name = name))]
+    pub fn create<M>(&mut self, name: &'static str) -> Result<(Context, Sender<M>), InternalError>
     where
         M: 'static,
     {
@@ -55,7 +57,7 @@ impl<'a> Context<'a> {
 
         // TODO: Ensure correct message type and actor are associated
 
-        let index = self.world.create(self.current)?;
+        let index = self.world.create(name, self.current)?;
         let sender = Sender::direct(index);
 
         let ctx = Context {
@@ -67,7 +69,7 @@ impl<'a> Context<'a> {
     }
 
     /// Start the current actor instance, making it available for handling messages.
-    #[instrument("Context::start", skip_all)]
+    #[instrument("Context::start", level = "debug", skip_all)]
     pub fn start<A>(&mut self, actor: A) -> Result<(), StartError>
     where
         A: Actor,

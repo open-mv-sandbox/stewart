@@ -56,7 +56,7 @@ fn not_started_removed() -> Result<(), Error> {
     let mut schedule = Schedule::default();
 
     let mut ctx = Context::root(&mut world, &mut schedule);
-    let (mut ctx, _) = ctx.create::<()>()?;
+    let (mut ctx, _) = ctx.create::<()>("mock-actor")?;
 
     // Create the child we use as a remove probe
     let (_, child) = given_actor(&mut ctx)?;

@@ -25,7 +25,7 @@ impl Schedule {
     }
 
     /// Process all pending messages, until none are left.
-    #[instrument("Schedule::run_until_idle", skip_all)]
+    #[instrument("Schedule::run_until_idle", level = "debug", skip_all)]
     pub fn run_until_idle(&mut self, world: &mut World) -> Result<(), InternalError> {
         world.timeout_starting();
 
