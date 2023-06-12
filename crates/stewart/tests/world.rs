@@ -2,28 +2,28 @@ mod utils;
 
 use std::sync::atomic::Ordering;
 
-use anyhow::{Context as _, Error};
+use anyhow::Error;
 use stewart::{Context, Schedule, World};
 use tracing_test::traced_test;
 
-use crate::utils::{given_actor, given_parent_child, when_sent_message_to};
+use crate::utils::{
+    given_fail_actor, given_mock_actor, given_parent_child, then_actor_dropped,
+    when_sent_message_to,
+};
 
 #[test]
 #[traced_test]
 fn send_message_to_actor() -> Result<(), Error> {
     let mut world = World::default();
     let mut schedule = Schedule::default();
-
     let mut ctx = Context::root(&mut world, &mut schedule);
-    let (parent, _child) = given_parent_child(&mut ctx)?;
 
-    // Regular send
-    when_sent_message_to(&mut world, &mut schedule, parent.sender.clone())?;
-    assert_eq!(parent.count.load(Ordering::SeqCst), 1);
+    let (_, actor) = given_mock_actor(&mut ctx)?;
 
-    // Actor should now be stopped, can't send to stopped
-    when_sent_message_to(&mut world, &mut schedule, parent.sender)?;
-    assert_eq!(parent.count.load(Ordering::SeqCst), 1);
+    when_sent_message_to(&mut world, &mut schedule, actor.sender.clone())?;
+    assert_eq!(actor.count.load(Ordering::SeqCst), 1);
+
+    then_actor_dropped(&actor);
 
     Ok(())
 }
@@ -33,18 +33,15 @@ fn send_message_to_actor() -> Result<(), Error> {
 fn stop_actors() -> Result<(), Error> {
     let mut world = World::default();
     let mut schedule = Schedule::default();
-
     let mut ctx = Context::root(&mut world, &mut schedule);
+
     let (parent, child) = given_parent_child(&mut ctx)?;
 
     // Stop parent
     parent.sender.send(&mut ctx, ());
     schedule.run_until_idle(&mut world)?;
 
-    // Can't send message to child as it should be stopped too
-    when_sent_message_to(&mut world, &mut schedule, child.sender)
-        .context("test: failed to send message")?;
-    assert_eq!(child.count.load(Ordering::SeqCst), 0);
+    then_actor_dropped(&child);
 
     Ok(())
 }
@@ -54,18 +51,32 @@ fn stop_actors() -> Result<(), Error> {
 fn not_started_removed() -> Result<(), Error> {
     let mut world = World::default();
     let mut schedule = Schedule::default();
-
     let mut ctx = Context::root(&mut world, &mut schedule);
+
     let (mut ctx, _) = ctx.create::<()>("mock-actor")?;
 
-    // Create the child we use as a remove probe
-    let (_, child) = given_actor(&mut ctx)?;
+    let (_, actor) = given_mock_actor(&mut ctx)?;
 
     // Process, this should remove the stale actor
     schedule.run_until_idle(&mut world)?;
 
-    // Check drop happened, using the child actor
-    assert!(child.dropped.load(Ordering::SeqCst));
+    then_actor_dropped(&actor);
+
+    Ok(())
+}
+
+#[test]
+#[traced_test]
+fn failed_stopped() -> Result<(), Error> {
+    let mut world = World::default();
+    let mut schedule = Schedule::default();
+    let mut ctx = Context::root(&mut world, &mut schedule);
+
+    let (_, actor) = given_fail_actor(&mut ctx)?;
+
+    when_sent_message_to(&mut world, &mut schedule, actor.sender.clone())?;
+
+    then_actor_dropped(&actor);
 
     Ok(())
 }

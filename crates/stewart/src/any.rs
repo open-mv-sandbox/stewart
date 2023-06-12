@@ -55,18 +55,25 @@ where
     }
 
     fn process(&mut self, ctx: &mut Context) {
+        // Let the actor's implementation process
         let result = self.actor.process(ctx, &mut self.state);
 
-        if !self.state.is_queue_empty() {
-            event!(Level::WARN, "actor did not process all pending messages");
-        }
-
+        // Check if processing failed
         match result {
             Ok(value) => value,
             Err(error) => {
-                // TODO: What to do with this?
-                event!(Level::ERROR, ?error, "actor failed while processing");
+                event!(Level::ERROR, ?error, "error while processing");
+
+                // If a processing error happens, the actor should be stopped.
+                // It's better to stop than to potentially retain inconsistent state.
+                self.state.stop();
+                return;
             }
+        }
+
+        // Sanity warning, these are things a correctly processing actor should do
+        if !self.state.is_queue_empty() {
+            event!(Level::WARN, "actor did not process all pending messages");
         }
     }
 }

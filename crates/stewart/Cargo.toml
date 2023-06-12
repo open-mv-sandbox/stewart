@@ -1,6 +1,6 @@
 [package]
 name = "stewart"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 description = "Stewart is a minimalist, high-performance, and non-exclusive actor system"
 readme = "../../README.md"
