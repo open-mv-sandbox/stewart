@@ -10,6 +10,12 @@ pub trait Actor: Sized + 'static {
     type Message;
 
     /// Perform a processing step.
+    ///
+    /// This function can return `Err` to signal a fatal error to the system.
+    /// If this happens, the actor will be stopped and cleaned up appropriately to protect against
+    /// inconsistent state.
+    ///
+    /// You should *always* prefer this over panicking, as this crashes the entire runtime.
     fn process(&mut self, ctx: &mut Context, state: &mut State<Self>) -> Result<(), Error>;
 }
 
