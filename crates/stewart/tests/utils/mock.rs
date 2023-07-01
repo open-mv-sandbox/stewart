@@ -7,16 +7,16 @@ use anyhow::{bail, Error};
 use stewart::{Actor, Context, Sender, State};
 
 pub fn given_mock_actor<'a>(cx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
-    let (mut cx, sender) = cx.create("mock-actor")?;
+    let (mut cx, hnd) = cx.create("mock-actor")?;
 
     let instance = MockActor::default();
 
     let count = instance.count.clone();
     let dropped = instance.dropped.clone();
-    cx.start(instance)?;
+    cx.start(hnd, instance)?;
 
     let info = ActorInfo {
-        sender,
+        sender: hnd.sender(),
         count,
         dropped,
     };
@@ -25,17 +25,17 @@ pub fn given_mock_actor<'a>(cx: &'a mut Context) -> Result<(Context<'a>, ActorIn
 }
 
 pub fn given_fail_actor<'a>(cx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
-    let (mut cx, sender) = cx.create("fail-actor")?;
+    let (mut cx, hnd) = cx.create("fail-actor")?;
 
     let mut instance = MockActor::default();
     instance.fail = true;
 
     let count = instance.count.clone();
     let dropped = instance.dropped.clone();
-    cx.start(instance)?;
+    cx.start(hnd, instance)?;
 
     let info = ActorInfo {
-        sender,
+        sender: hnd.sender(),
         count,
         dropped,
     };
@@ -50,7 +50,7 @@ pub struct ActorInfo {
 }
 
 #[derive(Default)]
-struct MockActor {
+pub struct MockActor {
     count: Rc<AtomicUsize>,
     dropped: Rc<AtomicBool>,
     fail: bool,

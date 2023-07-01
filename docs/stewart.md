@@ -1,6 +1,6 @@
 # Stewart
 
-Stewart is a minimalist, high-performance, and non-exclusive actor system.
+Stewart is a minimalist, hndigh-performance, and non-exclusive actor system.
 
 - Minimalist: Starts from a small self-contained and thread-local actor system with minimal
     assumptions. Everything else is built on top, including threading!

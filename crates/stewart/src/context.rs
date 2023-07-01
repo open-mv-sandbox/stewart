@@ -1,7 +1,9 @@
+use std::ops::{Deref, DerefMut};
+
 use thunderdome::Index;
 use tracing::{event, instrument, Level};
 
-use crate::{Actor, InternalError, Sender, StartError, World};
+use crate::{Actor, Handle, InternalError, World};
 
 /// Context to perform operations in.
 ///
@@ -35,37 +37,34 @@ impl<'a> Context<'a> {
     ///
     /// The given `name` will be used in logging.
     #[instrument("Context::create", level = "debug", skip_all)]
-    pub fn create<M>(&mut self, name: &'static str) -> Result<(Context, Sender<M>), InternalError>
+    pub fn create<A>(&mut self, name: &'static str) -> Result<(Context, Handle<A>), InternalError>
     where
-        M: 'static,
+        A: Actor,
     {
         event!(Level::DEBUG, name, "creating actor");
 
         // TODO: Ensure correct message type and actor are associated
 
-        let index = self.world.create(name, self.current)?;
-        let sender = Sender::direct(index);
+        let hnd = self.world.create(name, self.current)?;
 
         let cx = Context {
             world: self.world,
-            current: Some(index),
+            current: Some(hnd.index),
         };
-        Ok((cx, sender))
+        Ok((cx, hnd))
     }
+}
 
-    /// Start the current actor instance, making it available for handling messages.
-    ///
-    /// TODO: Add a 'start context'.
-    #[instrument("Context::start", level = "debug", skip_all)]
-    pub fn start<A>(&mut self, actor: A) -> Result<(), StartError>
-    where
-        A: Actor,
-    {
-        event!(Level::DEBUG, "starting actor");
+impl<'a> Deref for Context<'a> {
+    type Target = World;
 
-        let index = self.current.ok_or(StartError::CantStartRoot)?;
-        self.world.start(index, actor)?;
+    fn deref(&self) -> &Self::Target {
+        self.world
+    }
+}
 
-        Ok(())
+impl<'a> DerefMut for Context<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.world
     }
 }

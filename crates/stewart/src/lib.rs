@@ -1,6 +1,6 @@
 #![deny(missing_docs)]
 
-//! Stewart is a minimalist, high-performance, modular, and non-exclusive actor system.
+//! Stewart is a minimalist, hndigh-performance, modular, and non-exclusive actor system.
 //!
 //! This is an API reference for the stewart rust library. For a detailed user guide, read the
 //! stewart book.
@@ -8,6 +8,7 @@
 mod actor;
 mod any;
 mod context;
+mod handle;
 mod schedule;
 mod sender;
 mod tree;
@@ -19,6 +20,7 @@ use thiserror::Error;
 pub use self::{
     actor::{Actor, State},
     context::Context,
+    handle::Handle,
     sender::Sender,
     world::World,
 };
@@ -27,9 +29,6 @@ pub use self::{
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum StartError {
-    /// Can't start root.
-    #[error("cant start root")]
-    CantStartRoot,
     /// The actor has already been started.
     #[error("actor already started")]
     ActorAlreadyStarted,

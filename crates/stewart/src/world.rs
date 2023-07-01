@@ -6,7 +6,7 @@ use crate::{
     any::ActorEntry,
     schedule::Schedule,
     tree::{Node, Tree},
-    Actor, Context, InternalError, StartError,
+    Actor, Context, Handle, InternalError, StartError,
 };
 
 /// Thread-local actor tracking and execution system.
@@ -18,11 +18,14 @@ pub struct World {
 }
 
 impl World {
-    pub(crate) fn create(
+    pub(crate) fn create<A>(
         &mut self,
         name: &'static str,
         parent: Option<Index>,
-    ) -> Result<Index, Error> {
+    ) -> Result<Handle<A>, Error>
+    where
+        A: Actor,
+    {
         let node = Node {
             name,
             parent,
@@ -33,18 +36,26 @@ impl World {
         // Track that the actor has to be started
         self.pending_start.push(index);
 
-        Ok(index)
+        let handle = Handle::new(index);
+        Ok(handle)
     }
 
-    pub(crate) fn start<A>(&mut self, index: Index, actor: A) -> Result<(), StartError>
+    /// Start the current actor instance, making it available for handling messages.
+    #[instrument("World::start", level = "debug", skip_all)]
+    pub fn start<A>(&mut self, hnd: Handle<A>, actor: A) -> Result<(), StartError>
     where
         A: Actor,
     {
+        event!(Level::DEBUG, "starting actor");
+
         // Find the node for the actor
-        let node = self.tree.get_mut(index).ok_or(StartError::ActorNotFound)?;
+        let node = self
+            .tree
+            .get_mut(hnd.index)
+            .ok_or(StartError::ActorNotFound)?;
 
         // Validate if it's not started yet
-        let maybe_index = self.pending_start.iter().position(|v| *v == index);
+        let maybe_index = self.pending_start.iter().position(|v| *v == hnd.index);
         let pending_index = if let Some(value) = maybe_index {
             value
         } else {
@@ -112,7 +123,7 @@ impl World {
         let _entered = span.enter();
         event!(Level::DEBUG, "processing actor");
 
-        // Run the process handler
+        // Run the process sender
         let mut cx = Context::new(self, Some(index));
         actor.process(&mut cx);
         let stop = actor.is_stop_requested();

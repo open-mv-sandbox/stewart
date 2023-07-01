@@ -6,19 +6,16 @@ use tracing::{event, instrument, Level};
 
 use crate::Context;
 
-/// Typed abstract message sender.
+/// Typed encapsulated message sender.
 ///
 /// May send a message to one or more actors, after potentially transforming it.
-///
-/// TODO: Maybe separate "address" and "sender", to separate addressing and possible mapping
-/// functionality?
 pub struct Sender<M> {
     apply: Apply<M>,
 }
 
 enum Apply<M> {
     Noop,
-    Direct(Index),
+    Send(Index),
     Callback(Rc<dyn Fn(&mut Context, M)>),
 }
 
@@ -31,9 +28,9 @@ where
         Self { apply: Apply::Noop }
     }
 
-    pub(crate) fn direct(index: Index) -> Self {
+    pub(crate) fn new_send(index: Index) -> Self {
         Self {
-            apply: Apply::Direct(index),
+            apply: Apply::Send(index),
         }
     }
 
@@ -54,11 +51,11 @@ where
     }
 
     /// Apply the sender, potentially sending a message to a receiving actor.
-    #[instrument("Sender::send", skip_all)]
+    #[instrument("Sender::send", level = "debug", skip_all)]
     pub fn send(&self, cx: &mut Context, message: M) {
         match &self.apply {
             Apply::Noop => {}
-            Apply::Direct(index) => {
+            Apply::Send(index) => {
                 let result = Self::try_send_direct(cx, *index, message);
 
                 // TODO: What to do with this error?
@@ -81,7 +78,7 @@ impl<M> Clone for Sender<M> {
     fn clone(&self) -> Self {
         let apply = match &self.apply {
             Apply::Noop => Apply::Noop,
-            Apply::Direct(index) => Apply::Direct(*index),
+            Apply::Send(index) => Apply::Send(*index),
             Apply::Callback(callback) => Apply::Callback(callback.clone()),
         };
 

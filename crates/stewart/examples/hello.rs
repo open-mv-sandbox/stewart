@@ -90,13 +90,13 @@ mod hello_service {
         event!(Level::INFO, "starting");
 
         // Create the actor in the world
-        let (mut cx, sender) = cx.create("hello")?;
+        let (mut cx, hnd) = cx.create("hello")?;
 
         // Start the actor
         let actor = Service { name };
-        cx.start(actor)?;
+        cx.start(hnd, actor)?;
 
-        Ok(sender)
+        Ok(hnd.sender())
     }
 
     /// The actor implementation remains entirely private to the module, only exposed through the

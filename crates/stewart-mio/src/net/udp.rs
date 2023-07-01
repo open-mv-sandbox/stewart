@@ -26,14 +26,14 @@ impl SocketInfo {
 
 /// TODO: Auto-determine token ID
 pub fn udp_bind(cx: &mut Context, addr: SocketAddr) -> Result<SocketInfo, Error> {
-    let (mut cx, sender) = cx.create::<ImplMessage>("udp-socket")?;
+    let (mut cx, hnd) = cx.create("udp-socket")?;
 
     // Create the socket
     let mut socket = mio::net::UdpSocket::bind(addr)?;
     let local_addr = socket.local_addr()?;
 
     // Register the socket with mio
-    let wake = sender.clone().map(|_| ImplMessage::Wake);
+    let wake = hnd.sender().map(|_| ImplMessage::Wake);
     with_thread_context(|tcx| {
         // Get the next poll token
         let index = tcx.next_token;
@@ -53,10 +53,10 @@ pub fn udp_bind(cx: &mut Context, addr: SocketAddr) -> Result<SocketInfo, Error>
     // TODO: Registry cleanup when the socket is stopped
 
     let actor = UdpSocket { socket };
-    cx.start(actor)?;
+    cx.start(hnd, actor)?;
 
     let info = SocketInfo {
-        sender: sender.map(ImplMessage::Message),
+        sender: hnd.sender().map(ImplMessage::Message),
         local_addr,
     };
     Ok(info)

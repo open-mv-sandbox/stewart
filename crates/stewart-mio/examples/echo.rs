@@ -14,14 +14,14 @@ fn main() -> Result<(), Error> {
 }
 
 fn init(cx: &mut Context) -> Result<(), Error> {
-    let (mut cx, _) = cx.create::<()>("echo-server")?;
+    let (mut cx, hnd) = cx.create("echo-server")?;
 
     // Start the listen port
     let info = udp_bind(&mut cx, "0.0.0.0:1234".parse()?)?;
     event!(Level::INFO, addr = ?info.local_addr(), "listening");
 
     let actor = EchoServer;
-    cx.start(actor)?;
+    cx.start(hnd, actor)?;
 
     Ok(())
 }

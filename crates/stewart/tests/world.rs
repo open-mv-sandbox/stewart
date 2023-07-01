@@ -8,7 +8,7 @@ use tracing_test::traced_test;
 
 use crate::utils::{
     given_fail_actor, given_mock_actor, given_parent_child, then_actor_dropped,
-    when_sent_message_to,
+    when_sent_message_to, MockActor,
 };
 
 #[test]
@@ -50,7 +50,7 @@ fn not_started_removed() -> Result<(), Error> {
     let mut world = World::default();
     let mut cx = Context::root(&mut world);
 
-    let (mut cx, _) = cx.create::<()>("mock-actor")?;
+    let (mut cx, _) = cx.create::<MockActor>("mock-actor")?;
 
     let (_, actor) = given_mock_actor(&mut cx)?;
 
