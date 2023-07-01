@@ -4,7 +4,7 @@ use thunderdome::Index;
 
 use crate::{Actor, Sender};
 
-/// Typed actor handle, for performing operations on a specific actor.
+/// Typed actor handle, for performing operations on an actor.
 pub struct Handle<A> {
     pub(crate) index: Index,
     _a: PhantomData<AtomicPtr<A>>,

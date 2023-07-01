@@ -26,7 +26,7 @@ impl SocketInfo {
 
 /// TODO: Auto-determine token ID
 pub fn udp_bind(cx: &mut Context, addr: SocketAddr) -> Result<SocketInfo, Error> {
-    let (mut cx, hnd) = cx.create("udp-socket")?;
+    let hnd = cx.create("udp-socket")?;
 
     // Create the socket
     let mut socket = mio::net::UdpSocket::bind(addr)?;

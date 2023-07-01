@@ -14,7 +14,8 @@ fn main() -> Result<(), Error> {
 }
 
 fn init(cx: &mut Context) -> Result<(), Error> {
-    let (mut cx, hnd) = cx.create("echo-server")?;
+    let hnd = cx.create("echo-server")?;
+    let mut cx = cx.with(hnd);
 
     // Start the listen port
     let info = udp_bind(&mut cx, "0.0.0.0:1234".parse()?)?;

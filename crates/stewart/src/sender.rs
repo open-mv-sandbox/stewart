@@ -68,8 +68,7 @@ where
     }
 
     fn try_send_direct(cx: &mut Context, index: Index, message: M) -> Result<(), Error> {
-        cx.world_mut().send(index, message)?;
-
+        cx.send(index, message)?;
         Ok(())
     }
 }

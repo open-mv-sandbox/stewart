@@ -7,7 +7,7 @@ use anyhow::{bail, Error};
 use stewart::{Actor, Context, Sender, State};
 
 pub fn given_mock_actor<'a>(cx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
-    let (mut cx, hnd) = cx.create("mock-actor")?;
+    let hnd = cx.create("mock-actor")?;
 
     let instance = MockActor::default();
 
@@ -21,11 +21,12 @@ pub fn given_mock_actor<'a>(cx: &'a mut Context) -> Result<(Context<'a>, ActorIn
         dropped,
     };
 
+    let cx = cx.with(hnd);
     Ok((cx, info))
 }
 
 pub fn given_fail_actor<'a>(cx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
-    let (mut cx, hnd) = cx.create("fail-actor")?;
+    let hnd = cx.create("fail-actor")?;
 
     let mut instance = MockActor::default();
     instance.fail = true;
@@ -40,6 +41,7 @@ pub fn given_fail_actor<'a>(cx: &'a mut Context) -> Result<(Context<'a>, ActorIn
         dropped,
     };
 
+    let cx = cx.with(hnd);
     Ok((cx, info))
 }
 

@@ -1,9 +1,10 @@
 use std::any::Any;
 
 use anyhow::{Context as _, Error};
+use thunderdome::Index;
 use tracing::{event, Level};
 
-use crate::{Actor, Context, State};
+use crate::{Actor, Context, Handle, State, World};
 
 pub trait AnyActorEntry {
     fn is_stop_requested(&self) -> bool;
@@ -12,7 +13,7 @@ pub trait AnyActorEntry {
     fn enqueue(&mut self, slot: &mut dyn Any) -> Result<(), Error>;
 
     /// Process pending messages.
-    fn process(&mut self, cx: &mut Context);
+    fn process(&mut self, world: &mut World, index: Index);
 }
 
 pub struct ActorEntry<S>
@@ -35,9 +36,9 @@ where
     }
 }
 
-impl<S> AnyActorEntry for ActorEntry<S>
+impl<A> AnyActorEntry for ActorEntry<A>
 where
-    S: Actor,
+    A: Actor,
 {
     fn is_stop_requested(&self) -> bool {
         self.state.is_stop_requested()
@@ -45,7 +46,7 @@ where
 
     fn enqueue(&mut self, slot: &mut dyn Any) -> Result<(), Error> {
         // Take the message out
-        let slot: &mut Option<S::Message> =
+        let slot: &mut Option<A::Message> =
             slot.downcast_mut().context("incorrect message type")?;
         let message = slot.take().context("message not in slot")?;
 
@@ -54,9 +55,14 @@ where
         Ok(())
     }
 
-    fn process(&mut self, cx: &mut Context) {
+    fn process(&mut self, world: &mut World, index: Index) {
+        // Create a context for this actor
+        let hnd = Handle::<A>::new(index);
+        let mut cx = Context::root(world);
+        let mut cx = cx.with(hnd);
+
         // Let the actor's implementation process
-        let result = self.actor.process(cx, &mut self.state);
+        let result = self.actor.process(&mut cx, &mut self.state);
 
         // Check if processing failed
         match result {

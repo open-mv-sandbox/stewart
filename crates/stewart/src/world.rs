@@ -6,7 +6,7 @@ use crate::{
     any::ActorEntry,
     schedule::Schedule,
     tree::{Node, Tree},
-    Actor, Context, Handle, InternalError, StartError,
+    Actor, Handle, InternalError, StartError,
 };
 
 /// Thread-local actor tracking and execution system.
@@ -124,8 +124,7 @@ impl World {
         event!(Level::DEBUG, "processing actor");
 
         // Run the process sender
-        let mut cx = Context::new(self, Some(index));
-        actor.process(&mut cx);
+        actor.process(self, index);
         let stop = actor.is_stop_requested();
 
         // Return the actor

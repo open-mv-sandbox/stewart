@@ -90,7 +90,7 @@ mod hello_service {
         event!(Level::INFO, "starting");
 
         // Create the actor in the world
-        let (mut cx, hnd) = cx.create("hello")?;
+        let hnd = cx.create("hello")?;
 
         // Start the actor
         let actor = Service { name };

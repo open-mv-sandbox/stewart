@@ -15,10 +15,6 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
-    pub(crate) fn new(world: &'a mut World, current: Option<Index>) -> Self {
-        Self { world, current }
-    }
-
     /// Create a 'root' context, not associated with an actor.
     pub fn root(world: &'a mut World) -> Self {
         Self {
@@ -27,8 +23,12 @@ impl<'a> Context<'a> {
         }
     }
 
-    pub(crate) fn world_mut(&mut self) -> &mut World {
-        &mut self.world
+    /// Create a context, based on this context, with an actor as the current parent.
+    pub fn with<A>(&mut self, hnd: Handle<A>) -> Context {
+        Context {
+            world: self.world,
+            current: Some(hnd.index),
+        }
     }
 
     /// Create a new actor.
@@ -37,7 +37,7 @@ impl<'a> Context<'a> {
     ///
     /// The given `name` will be used in logging.
     #[instrument("Context::create", level = "debug", skip_all)]
-    pub fn create<A>(&mut self, name: &'static str) -> Result<(Context, Handle<A>), InternalError>
+    pub fn create<A>(&mut self, name: &'static str) -> Result<Handle<A>, InternalError>
     where
         A: Actor,
     {
@@ -47,11 +47,7 @@ impl<'a> Context<'a> {
 
         let hnd = self.world.create(name, self.current)?;
 
-        let cx = Context {
-            world: self.world,
-            current: Some(hnd.index),
-        };
-        Ok((cx, hnd))
+        Ok(hnd)
     }
 }
 
