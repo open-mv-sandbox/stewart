@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{Context, Schedule, Sender, World};
+use stewart::{Context, Sender, World};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -12,8 +12,7 @@ fn main() -> Result<(), Error> {
     utils::init_logging();
 
     let mut world = World::default();
-    let mut schedule = Schedule::default();
-    let mut cx = Context::root(&mut world, &mut schedule);
+    let mut cx = Context::root(&mut world);
 
     // Start the hello service
     let service = hello_service::start(&mut cx, "Example".to_string())?;
@@ -47,7 +46,7 @@ fn main() -> Result<(), Error> {
     service.send(&mut cx, message);
 
     // Process messages
-    schedule.run_until_idle(&mut world)?;
+    world.run_until_idle()?;
 
     Ok(())
 }

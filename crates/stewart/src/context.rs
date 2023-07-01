@@ -1,7 +1,7 @@
 use thunderdome::Index;
 use tracing::{event, instrument, Level};
 
-use crate::{Actor, InternalError, Schedule, Sender, StartError, World};
+use crate::{Actor, InternalError, Sender, StartError, World};
 
 /// Context to perform operations in.
 ///
@@ -9,38 +9,24 @@ use crate::{Actor, InternalError, Schedule, Sender, StartError, World};
 /// and the context it will be operated in, such as the current actor.
 pub struct Context<'a> {
     pub(crate) world: &'a mut World,
-    schedule: &'a mut Schedule,
     current: Option<Index>,
 }
 
 impl<'a> Context<'a> {
-    pub(crate) fn new(
-        world: &'a mut World,
-        schedule: &'a mut Schedule,
-        current: Option<Index>,
-    ) -> Self {
-        Self {
-            world,
-            schedule,
-            current,
-        }
+    pub(crate) fn new(world: &'a mut World, current: Option<Index>) -> Self {
+        Self { world, current }
     }
 
     /// Create a 'root' context, not associated with an actor.
-    pub fn root(world: &'a mut World, schedule: &'a mut Schedule) -> Self {
+    pub fn root(world: &'a mut World) -> Self {
         Self {
             world,
-            schedule,
             current: None,
         }
     }
 
     pub(crate) fn world_mut(&mut self) -> &mut World {
         &mut self.world
-    }
-
-    pub(crate) fn schedule_mut(&mut self) -> &mut Schedule {
-        &mut self.schedule
     }
 
     /// Create a new actor.
@@ -62,7 +48,6 @@ impl<'a> Context<'a> {
 
         let cx = Context {
             world: self.world,
-            schedule: self.schedule,
             current: Some(index),
         };
         Ok((cx, sender))

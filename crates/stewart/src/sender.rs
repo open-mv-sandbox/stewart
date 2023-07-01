@@ -71,8 +71,7 @@ where
     }
 
     fn try_send_direct(cx: &mut Context, index: Index, message: M) -> Result<(), Error> {
-        cx.world_mut().queue_message(index, message)?;
-        cx.schedule_mut().queue_process(index);
+        cx.world_mut().send(index, message)?;
 
         Ok(())
     }

@@ -10,6 +10,7 @@ mod any;
 mod context;
 mod schedule;
 mod sender;
+mod tree;
 mod world;
 
 use anyhow::Error;
@@ -18,7 +19,6 @@ use thiserror::Error;
 pub use self::{
     actor::{Actor, State},
     context::Context,
-    schedule::Schedule,
     sender::Sender,
     world::World,
 };
