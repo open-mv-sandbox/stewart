@@ -6,14 +6,14 @@ use std::{
 use anyhow::{bail, Error};
 use stewart::{Actor, Context, Sender, State};
 
-pub fn given_mock_actor<'a>(ctx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
-    let (mut ctx, sender) = ctx.create("mock-actor")?;
+pub fn given_mock_actor<'a>(cx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
+    let (mut cx, sender) = cx.create("mock-actor")?;
 
     let instance = MockActor::default();
 
     let count = instance.count.clone();
     let dropped = instance.dropped.clone();
-    ctx.start(instance)?;
+    cx.start(instance)?;
 
     let info = ActorInfo {
         sender,
@@ -21,18 +21,18 @@ pub fn given_mock_actor<'a>(ctx: &'a mut Context) -> Result<(Context<'a>, ActorI
         dropped,
     };
 
-    Ok((ctx, info))
+    Ok((cx, info))
 }
 
-pub fn given_fail_actor<'a>(ctx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
-    let (mut ctx, sender) = ctx.create("fail-actor")?;
+pub fn given_fail_actor<'a>(cx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
+    let (mut cx, sender) = cx.create("fail-actor")?;
 
     let mut instance = MockActor::default();
     instance.fail = true;
 
     let count = instance.count.clone();
     let dropped = instance.dropped.clone();
-    ctx.start(instance)?;
+    cx.start(instance)?;
 
     let info = ActorInfo {
         sender,
@@ -40,7 +40,7 @@ pub fn given_fail_actor<'a>(ctx: &'a mut Context) -> Result<(Context<'a>, ActorI
         dropped,
     };
 
-    Ok((ctx, info))
+    Ok((cx, info))
 }
 
 pub struct ActorInfo {
@@ -59,7 +59,7 @@ struct MockActor {
 impl Actor for MockActor {
     type Message = ();
 
-    fn process(&mut self, _ctx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
+    fn process(&mut self, _cx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
         if self.fail {
             bail!("mock intentional fail");
         }

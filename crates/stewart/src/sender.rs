@@ -9,6 +9,9 @@ use crate::Context;
 /// Typed abstract message sender.
 ///
 /// May send a message to one or more actors, after potentially transforming it.
+///
+/// TODO: Maybe separate "address" and "sender", to separate addressing and possible mapping
+/// functionality?
 pub struct Sender<M> {
     apply: Apply<M>,
 }
@@ -39,9 +42,9 @@ where
     where
         F: Fn(I) -> M + 'static,
     {
-        let callback = move |ctx: &mut Context, message: I| {
+        let callback = move |cx: &mut Context, message: I| {
             let message = callback(message);
-            self.send(ctx, message)
+            self.send(cx, message)
         };
         let callback = Rc::new(callback);
 
@@ -52,24 +55,24 @@ where
 
     /// Apply the sender, potentially sending a message to a receiving actor.
     #[instrument("Sender::send", skip_all)]
-    pub fn send(&self, ctx: &mut Context, message: M) {
+    pub fn send(&self, cx: &mut Context, message: M) {
         match &self.apply {
             Apply::Noop => {}
             Apply::Direct(index) => {
-                let result = Self::try_send_direct(ctx, *index, message);
+                let result = Self::try_send_direct(cx, *index, message);
 
                 // TODO: What to do with this error?
                 if let Err(error) = result {
                     event!(Level::ERROR, ?error, "failed to send message");
                 }
             }
-            Apply::Callback(callback) => callback(ctx, message),
+            Apply::Callback(callback) => callback(cx, message),
         }
     }
 
-    fn try_send_direct(ctx: &mut Context, index: Index, message: M) -> Result<(), Error> {
-        ctx.world_mut().queue_message(index, message)?;
-        ctx.schedule_mut().queue_process(index);
+    fn try_send_direct(cx: &mut Context, index: Index, message: M) -> Result<(), Error> {
+        cx.world_mut().queue_message(index, message)?;
+        cx.schedule_mut().queue_process(index);
 
         Ok(())
     }

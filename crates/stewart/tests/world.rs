@@ -16,9 +16,9 @@ use crate::utils::{
 fn send_message_to_actor() -> Result<(), Error> {
     let mut world = World::default();
     let mut schedule = Schedule::default();
-    let mut ctx = Context::root(&mut world, &mut schedule);
+    let mut cx = Context::root(&mut world, &mut schedule);
 
-    let (_, actor) = given_mock_actor(&mut ctx)?;
+    let (_, actor) = given_mock_actor(&mut cx)?;
 
     when_sent_message_to(&mut world, &mut schedule, actor.sender.clone())?;
     assert_eq!(actor.count.load(Ordering::SeqCst), 1);
@@ -33,12 +33,12 @@ fn send_message_to_actor() -> Result<(), Error> {
 fn stop_actors() -> Result<(), Error> {
     let mut world = World::default();
     let mut schedule = Schedule::default();
-    let mut ctx = Context::root(&mut world, &mut schedule);
+    let mut cx = Context::root(&mut world, &mut schedule);
 
-    let (parent, child) = given_parent_child(&mut ctx)?;
+    let (parent, child) = given_parent_child(&mut cx)?;
 
     // Stop parent
-    parent.sender.send(&mut ctx, ());
+    parent.sender.send(&mut cx, ());
     schedule.run_until_idle(&mut world)?;
 
     then_actor_dropped(&child);
@@ -51,11 +51,11 @@ fn stop_actors() -> Result<(), Error> {
 fn not_started_removed() -> Result<(), Error> {
     let mut world = World::default();
     let mut schedule = Schedule::default();
-    let mut ctx = Context::root(&mut world, &mut schedule);
+    let mut cx = Context::root(&mut world, &mut schedule);
 
-    let (mut ctx, _) = ctx.create::<()>("mock-actor")?;
+    let (mut cx, _) = cx.create::<()>("mock-actor")?;
 
-    let (_, actor) = given_mock_actor(&mut ctx)?;
+    let (_, actor) = given_mock_actor(&mut cx)?;
 
     // Process, this should remove the stale actor
     schedule.run_until_idle(&mut world)?;
@@ -70,9 +70,9 @@ fn not_started_removed() -> Result<(), Error> {
 fn failed_stopped() -> Result<(), Error> {
     let mut world = World::default();
     let mut schedule = Schedule::default();
-    let mut ctx = Context::root(&mut world, &mut schedule);
+    let mut cx = Context::root(&mut world, &mut schedule);
 
-    let (_, actor) = given_fail_actor(&mut ctx)?;
+    let (_, actor) = given_fail_actor(&mut cx)?;
 
     when_sent_message_to(&mut world, &mut schedule, actor.sender.clone())?;
 

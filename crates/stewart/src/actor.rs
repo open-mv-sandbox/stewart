@@ -16,7 +16,7 @@ pub trait Actor: Sized + 'static {
     /// inconsistent state.
     ///
     /// You should *always* prefer this over panicking, as this crashes the entire runtime.
-    fn process(&mut self, ctx: &mut Context, state: &mut State<Self>) -> Result<(), Error>;
+    fn process(&mut self, cx: &mut Context, state: &mut State<Self>) -> Result<(), Error>;
 }
 
 /// World state of an actor, such as its pending messages.

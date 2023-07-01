@@ -9,9 +9,9 @@ pub use mock::{given_fail_actor, given_mock_actor};
 
 use self::mock::ActorInfo;
 
-pub fn given_parent_child(ctx: &mut Context) -> Result<(ActorInfo, ActorInfo), Error> {
-    let (mut ctx, parent) = given_mock_actor(ctx)?;
-    let (_, child) = given_mock_actor(&mut ctx)?;
+pub fn given_parent_child(cx: &mut Context) -> Result<(ActorInfo, ActorInfo), Error> {
+    let (mut cx, parent) = given_mock_actor(cx)?;
+    let (_, child) = given_mock_actor(&mut cx)?;
 
     Ok((parent, child))
 }
@@ -21,8 +21,8 @@ pub fn when_sent_message_to(
     schedule: &mut Schedule,
     sender: Sender<()>,
 ) -> Result<(), Error> {
-    let mut ctx = Context::root(world, schedule);
-    sender.send(&mut ctx, ());
+    let mut cx = Context::root(world, schedule);
+    sender.send(&mut cx, ());
 
     schedule
         .run_until_idle(world)

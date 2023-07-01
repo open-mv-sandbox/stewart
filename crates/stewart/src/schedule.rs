@@ -24,15 +24,19 @@ impl Schedule {
         self.process.push_back(index);
     }
 
+    pub(crate) fn dequeue_process(&mut self, index: Index) {
+        self.process.retain(|v| *v != index);
+    }
+
     /// Process all pending messages, until none are left.
     #[instrument("Schedule::run_until_idle", level = "debug", skip_all)]
     pub fn run_until_idle(&mut self, world: &mut World) -> Result<(), InternalError> {
-        world.timeout_starting();
+        world.timeout_starting(self)?;
 
         while let Some(index) = self.process.pop_front() {
             world.process(self, index).context("failed to process")?;
 
-            world.timeout_starting();
+            world.timeout_starting(self)?;
         }
 
         Ok(())

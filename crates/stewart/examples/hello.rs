@@ -13,10 +13,10 @@ fn main() -> Result<(), Error> {
 
     let mut world = World::default();
     let mut schedule = Schedule::default();
-    let mut ctx = Context::root(&mut world, &mut schedule);
+    let mut cx = Context::root(&mut world, &mut schedule);
 
     // Start the hello service
-    let service = hello_service::start(&mut ctx, "Example".to_string())?;
+    let service = hello_service::start(&mut cx, "Example".to_string())?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -26,14 +26,14 @@ fn main() -> Result<(), Error> {
         id: Uuid::new_v4(),
         action,
     };
-    service.send(&mut ctx, message);
+    service.send(&mut cx, message);
 
     let action = hello::Action::Greet("Actors".to_string());
     let message = hello::Message {
         id: Uuid::new_v4(),
         action,
     };
-    service.send(&mut ctx, message);
+    service.send(&mut cx, message);
 
     // Stop the actor, automatically cleaning up associated resources
     let action = hello::Action::Stop {
@@ -44,7 +44,7 @@ fn main() -> Result<(), Error> {
         id: Uuid::new_v4(),
         action,
     };
-    service.send(&mut ctx, message);
+    service.send(&mut cx, message);
 
     // Process messages
     schedule.run_until_idle(&mut world)?;
@@ -87,15 +87,15 @@ mod hello_service {
 
     /// Start a hello service on the current actor world.
     #[instrument("hello::start", skip_all)]
-    pub fn start(ctx: &mut Context, name: String) -> Result<Sender<protocol::Message>, Error> {
+    pub fn start(cx: &mut Context, name: String) -> Result<Sender<protocol::Message>, Error> {
         event!(Level::INFO, "starting");
 
         // Create the actor in the world
-        let (mut ctx, sender) = ctx.create("hello")?;
+        let (mut cx, sender) = cx.create("hello")?;
 
         // Start the actor
         let actor = Service { name };
-        ctx.start(actor)?;
+        cx.start(actor)?;
 
         Ok(sender)
     }
@@ -110,7 +110,7 @@ mod hello_service {
     impl Actor for Service {
         type Message = protocol::Message;
 
-        fn process(&mut self, ctx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
+        fn process(&mut self, cx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
             while let Some(message) = state.next() {
@@ -123,7 +123,7 @@ mod hello_service {
                         event!(Level::INFO, "stopping service");
 
                         state.stop();
-                        on_result.send(ctx, message.id);
+                        on_result.send(cx, message.id);
                     }
                 }
             }

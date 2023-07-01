@@ -12,7 +12,7 @@ pub trait AnyActorEntry {
     fn enqueue(&mut self, slot: &mut dyn Any) -> Result<(), Error>;
 
     /// Process pending messages.
-    fn process(&mut self, ctx: &mut Context);
+    fn process(&mut self, cx: &mut Context);
 }
 
 pub struct ActorEntry<S>
@@ -54,9 +54,9 @@ where
         Ok(())
     }
 
-    fn process(&mut self, ctx: &mut Context) {
+    fn process(&mut self, cx: &mut Context) {
         // Let the actor's implementation process
-        let result = self.actor.process(ctx, &mut self.state);
+        let result = self.actor.process(cx, &mut self.state);
 
         // Check if processing failed
         match result {

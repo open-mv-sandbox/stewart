@@ -70,11 +70,14 @@ impl World {
         Ok(())
     }
 
-    /// Remove any actors that weren't started in time
-    pub(crate) fn timeout_starting(&mut self) {
+    /// Remove any actors that weren't started in time.
+    pub(crate) fn timeout_starting(&mut self, schedule: &mut Schedule) -> Result<(), Error> {
         while let Some(actor) = self.pending_start.pop() {
-            self.remove(actor);
+            event!(Level::DEBUG, "actor start timed out");
+            self.remove(schedule, actor)?;
         }
+
+        Ok(())
     }
 
     pub(crate) fn queue_message<M>(&mut self, index: Index, message: M) -> Result<(), Error>
@@ -102,8 +105,8 @@ impl World {
         event!(Level::DEBUG, "processing actor");
 
         // Run the process handler
-        let mut ctx = Context::new(self, schedule, Some(index));
-        actor.process(&mut ctx);
+        let mut cx = Context::new(self, schedule, Some(index));
+        actor.process(&mut cx);
         let stop = actor.is_stop_requested();
 
         // Return the actor
@@ -115,14 +118,14 @@ impl World {
 
         // If the actor requested to remove itself, remove it
         if stop {
-            self.remove(index);
+            self.remove(schedule, index)?;
         }
 
         Ok(())
     }
 
     /// Remove actor and its hierarchy.
-    fn remove(&mut self, index: Index) {
+    fn remove(&mut self, schedule: &mut Schedule, index: Index) -> Result<(), Error> {
         let mut queue = vec![index];
 
         while let Some(index) = queue.last().cloned() {
@@ -132,10 +135,18 @@ impl World {
             }
 
             // We verified this actor can be removed, so pop it from the queue and remove it
-            event!(Level::DEBUG, "removing actor");
             queue.pop();
-            self.nodes.remove(index);
+            let node = self
+                .nodes
+                .remove(index)
+                .context("failed to get node to remove")?;
+            event!(Level::DEBUG, name = node.name, "removing actor");
+
+            // Clean up its pending messages too
+            schedule.dequeue_process(index);
         }
+
+        Ok(())
     }
 
     /// Returns true if all dependencies have been removed.
