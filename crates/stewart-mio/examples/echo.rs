@@ -14,7 +14,7 @@ fn main() -> Result<(), Error> {
 }
 
 fn init(cx: &mut Context) -> Result<(), Error> {
-    let hnd = cx.create("echo-server")?;
+    let hnd = cx.create("echo-example")?;
     let mut cx = cx.with(hnd);
     let sender = hnd.sender();
 
