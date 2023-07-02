@@ -2,7 +2,7 @@
 name = "stewart-mio"
 version = "0.1.0"
 edition = "2021"
-description = "Mio based IO agents and runner for stewart"
+description = "Mio event loop runner for stewart"
 readme = "../../README.md"
 repository = "https://github.com/open-mv-sandbox/stewart"
 license = "MIT OR Apache-2.0"

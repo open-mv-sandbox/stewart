@@ -1,6 +1,6 @@
 #![deny(missing_docs)]
 
-//! Stewart is a minimalist, high-performance, modular, and non-exclusive actor system.
+//! A minimalist, high-performance, modular, and non-exclusive actor system.
 //!
 //! This is an API reference for the stewart rust library. For a detailed user guide, read the
 //! stewart book.
