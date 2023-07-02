@@ -14,8 +14,7 @@ fn main() -> Result<(), Error> {
 }
 
 fn init(world: &mut World, cx: &Context) -> Result<(), Error> {
-    let id = world.create(cx, "echo-example")?;
-    let cx = cx.with(id);
+    let (cx, id) = world.create(cx, "echo-example")?;
     let sender = Handler::to(id);
 
     // Start the listen port

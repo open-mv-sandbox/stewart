@@ -22,7 +22,11 @@ impl World {
     ///
     /// The given `name` will be used in logging.
     #[instrument("World::create", level = "debug", skip_all)]
-    pub fn create(&mut self, cx: &Context, name: &'static str) -> Result<Id, InternalError> {
+    pub fn create(
+        &mut self,
+        cx: &Context,
+        name: &'static str,
+    ) -> Result<(Context, Id), InternalError> {
         event!(Level::DEBUG, name, "creating actor");
 
         let node = Node {
@@ -35,7 +39,9 @@ impl World {
         // Track that the actor has to be started
         self.pending_start.push(index);
 
-        Ok(Id { index })
+        let id = Id { index };
+        let cx = cx.with_current(id);
+        Ok((cx, id))
     }
 
     /// Start an actor instance at an `Id`.
@@ -137,7 +143,7 @@ impl World {
         event!(Level::DEBUG, "processing actor");
 
         // Run the process sender
-        let cx = Context::root().with(Id { index });
+        let cx = Context::root().with_current(Id { index });
         actor.process(self, &cx);
         let stop = actor.is_stop_requested();
 

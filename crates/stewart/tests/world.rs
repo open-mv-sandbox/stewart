@@ -50,8 +50,7 @@ fn not_started_removed() -> Result<(), Error> {
     let mut world = World::default();
     let cx = Context::root();
 
-    let id = world.create(&cx, "mock-actor")?;
-    let cx = cx.with(id);
+    let (cx, _id) = world.create(&cx, "mock-actor")?;
 
     let (_, actor) = given_mock_actor(&mut world, &cx)?;
 

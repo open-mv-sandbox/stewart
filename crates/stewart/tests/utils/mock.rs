@@ -7,7 +7,7 @@ use anyhow::{bail, Error};
 use stewart::{Actor, Context, Handler, State, World};
 
 pub fn given_mock_actor(world: &mut World, cx: &Context) -> Result<(Context, ActorInfo), Error> {
-    let id = world.create(cx, "mock-actor")?;
+    let (cx, id) = world.create(cx, "mock-actor")?;
 
     let instance = MockActor::default();
 
@@ -21,12 +21,11 @@ pub fn given_mock_actor(world: &mut World, cx: &Context) -> Result<(Context, Act
         dropped,
     };
 
-    let cx = cx.with(id);
     Ok((cx, info))
 }
 
 pub fn given_fail_actor(world: &mut World, cx: &Context) -> Result<(Context, ActorInfo), Error> {
-    let id = world.create(cx, "fail-actor")?;
+    let (cx, id) = world.create(cx, "fail-actor")?;
 
     let mut instance = MockActor::default();
     instance.fail = true;
@@ -41,7 +40,6 @@ pub fn given_fail_actor(world: &mut World, cx: &Context) -> Result<(Context, Act
         dropped,
     };
 
-    let cx = cx.with(id);
     Ok((cx, info))
 }
 

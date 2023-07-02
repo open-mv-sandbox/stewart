@@ -94,7 +94,7 @@ mod hello_service {
         event!(Level::INFO, "starting");
 
         // Create the actor in the world
-        let id = world.create(cx, "hello")?;
+        let (_cx, id) = world.create(cx, "hello")?;
 
         // Start the actor
         let actor = Service { name };

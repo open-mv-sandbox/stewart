@@ -34,7 +34,7 @@ pub fn bind(
     addr: SocketAddr,
     on_packet: Handler<Packet>,
 ) -> Result<SocketInfo, Error> {
-    let id = world.create(cx, "udp-socket")?;
+    let (_cx, id) = world.create(cx, "udp-socket")?;
 
     // Create the socket
     let mut socket = mio::net::UdpSocket::bind(addr)?;

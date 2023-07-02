@@ -16,8 +16,7 @@ impl Context {
         Self { current: None }
     }
 
-    /// TODO: Maybe shouldn't be public?
-    pub fn with(&self, id: Id) -> Self {
+    pub(crate) fn with_current(&self, id: Id) -> Self {
         Self { current: Some(id) }
     }
 
