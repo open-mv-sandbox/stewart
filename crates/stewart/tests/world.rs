@@ -15,7 +15,7 @@ use crate::utils::{
 #[traced_test]
 fn send_message_to_actor() -> Result<(), Error> {
     let mut world = World::default();
-    let cx = Context::root();
+    let cx = Context::default();
 
     let (_, actor) = given_mock_actor(&mut world, &cx)?;
 
@@ -31,13 +31,13 @@ fn send_message_to_actor() -> Result<(), Error> {
 #[traced_test]
 fn stop_actors() -> Result<(), Error> {
     let mut world = World::default();
-    let cx = Context::root();
+    let cx = Context::default();
 
     let (parent, child) = given_parent_child(&mut world, &cx)?;
 
     // Stop parent
     parent.sender.handle(&mut world, ());
-    world.run_until_idle()?;
+    world.run_until_idle(&cx)?;
 
     then_actor_dropped(&child);
 
@@ -48,14 +48,14 @@ fn stop_actors() -> Result<(), Error> {
 #[traced_test]
 fn not_started_removed() -> Result<(), Error> {
     let mut world = World::default();
-    let cx = Context::root();
+    let cx = Context::default();
 
     let (cx, _id) = world.create(&cx, "mock-actor")?;
 
     let (_, actor) = given_mock_actor(&mut world, &cx)?;
 
     // Process, this should remove the stale actor
-    world.run_until_idle()?;
+    world.run_until_idle(&cx)?;
 
     then_actor_dropped(&actor);
 
@@ -66,7 +66,7 @@ fn not_started_removed() -> Result<(), Error> {
 #[traced_test]
 fn failed_stopped() -> Result<(), Error> {
     let mut world = World::default();
-    let cx = Context::root();
+    let cx = Context::default();
 
     let (_, actor) = given_fail_actor(&mut world, &cx)?;
 

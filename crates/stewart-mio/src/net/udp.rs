@@ -1,11 +1,11 @@
 use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr};
 
-use anyhow::Error;
+use anyhow::{Context as _, Error};
 use mio::{Interest, Token};
 use stewart::{Actor, Context, Handler, State, World};
 use tracing::{event, Level};
 
-use crate::{with_thread_context, WakeEvent};
+use crate::{ThreadContextEntry, WakeEvent};
 
 #[derive(Debug)]
 pub struct Packet {
@@ -40,24 +40,26 @@ pub fn bind(
     let mut socket = mio::net::UdpSocket::bind(addr)?;
     let local_addr = socket.local_addr()?;
 
-    // Register the socket with mio
+    let tcx = cx
+        .blackboard()
+        .get::<ThreadContextEntry>()
+        .context("failed to get context")?;
+    let mut tcx = tcx.borrow_mut();
+
+    // Get the next poll token
+    let index = tcx.next_token;
+    tcx.next_token += 1;
+    let token = Token(index);
+
+    // Register the socket
     let wake = Handler::to(id).map(ImplMessage::Wake);
-    let token = with_thread_context(|tcx| {
-        // Get the next poll token
-        let index = tcx.next_token;
-        tcx.next_token += 1;
-        let token = Token(index);
+    tcx.poll
+        .registry()
+        .register(&mut socket, token, Interest::READABLE)?;
 
-        // Register the socket
-        tcx.poll
-            .registry()
-            .register(&mut socket, token, Interest::READABLE)?;
+    // Store routing for receiving wakeup events
+    tcx.wake_senders.insert(token, wake);
 
-        // Store routing for receiving wakeup events
-        tcx.wake_senders.insert(token, wake);
-
-        Ok(token)
-    })?;
     // TODO: Registry cleanup when the socket is stopped
 
     let actor = UdpSocket {
@@ -93,7 +95,7 @@ impl Actor for UdpSocket {
     fn process(
         &mut self,
         world: &mut World,
-        _cx: &Context,
+        cx: &Context,
         state: &mut State<Self>,
     ) -> Result<(), Error> {
         let mut wake = None;
@@ -109,14 +111,17 @@ impl Actor for UdpSocket {
 
                     // Reregister so we can receive write events
                     if should_register {
-                        with_thread_context(|tcx| {
-                            tcx.poll.registry().reregister(
-                                &mut self.socket,
-                                self.token,
-                                Interest::READABLE | Interest::WRITABLE,
-                            )?;
-                            Ok(())
-                        })?;
+                        let tcx = cx
+                            .blackboard()
+                            .get::<ThreadContextEntry>()
+                            .context("failed to get context")?;
+                        let tcx = tcx.borrow_mut();
+
+                        tcx.poll.registry().reregister(
+                            &mut self.socket,
+                            self.token,
+                            Interest::READABLE | Interest::WRITABLE,
+                        )?;
                     }
                 }
                 ImplMessage::Wake(event) => {
@@ -131,7 +136,7 @@ impl Actor for UdpSocket {
                 self.poll_read(world)?
             }
             if wake.write {
-                self.poll_write()?
+                self.poll_write(cx)?
             }
         }
 
@@ -175,19 +180,22 @@ impl UdpSocket {
         Ok(true)
     }
 
-    fn poll_write(&mut self) -> Result<(), Error> {
+    fn poll_write(&mut self, cx: &Context) -> Result<(), Error> {
         event!(Level::TRACE, "polling write");
 
         while self.try_send()? {}
 
         // If we have nothing left, remove the writable registry
         if self.queue.is_empty() {
-            with_thread_context(|tcx| {
-                tcx.poll
-                    .registry()
-                    .reregister(&mut self.socket, self.token, Interest::READABLE)?;
-                Ok(())
-            })?;
+            let tcx = cx
+                .blackboard()
+                .get::<ThreadContextEntry>()
+                .context("failed to get context")?;
+            let tcx = tcx.borrow_mut();
+
+            tcx.poll
+                .registry()
+                .reregister(&mut self.socket, self.token, Interest::READABLE)?;
         }
 
         Ok(())

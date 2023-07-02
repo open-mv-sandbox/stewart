@@ -119,11 +119,11 @@ impl World {
 
     /// Process all pending messages, until none are left.
     #[instrument("World::run_until_idle", level = "debug", skip_all)]
-    pub fn run_until_idle(&mut self) -> Result<(), InternalError> {
+    pub fn run_until_idle(&mut self, cx: &Context) -> Result<(), InternalError> {
         self.timeout_starting()?;
 
         while let Some(index) = self.schedule.next() {
-            self.process(index).context("failed to process")?;
+            self.process(cx, index).context("failed to process")?;
 
             self.timeout_starting()?;
         }
@@ -131,7 +131,7 @@ impl World {
         Ok(())
     }
 
-    pub(crate) fn process(&mut self, index: Index) -> Result<(), Error> {
+    pub(crate) fn process(&mut self, cx: &Context, index: Index) -> Result<(), Error> {
         // Borrow the actor
         let node = self.tree.get_mut(index).context("failed to find actor")?;
         let mut actor = node.entry.take().context("actor unavailable")?;
@@ -141,7 +141,7 @@ impl World {
         event!(Level::DEBUG, "processing actor");
 
         // Run the process sender
-        let cx = Context::root().with_current(Id { index });
+        let cx = cx.with_current(Id { index });
         actor.process(self, &cx);
         let stop = actor.is_stop_requested();
 
@@ -184,7 +184,7 @@ impl Drop for World {
     }
 }
 
-/// Actor ID, for performing operations directly on a specific actor.
+/// ID of an actor slot in a `World`.
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Id {
     index: Index,

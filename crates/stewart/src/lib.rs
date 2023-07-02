@@ -18,7 +18,7 @@ use thiserror::Error;
 
 pub use self::{
     actor::{Actor, State},
-    context::Context,
+    context::{Blackboard, Context},
     handler::Handler,
     world::{Id, World},
 };
@@ -33,6 +33,9 @@ pub enum StartError {
     /// The actor couldn't be found.
     #[error("actor not found")]
     ActorNotFound,
+    /// Internal error.
+    #[error("internal error")]
+    InternalError(InternalError),
 }
 
 /// Internal error, this is always a bug.

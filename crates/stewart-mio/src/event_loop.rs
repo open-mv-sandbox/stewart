@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use anyhow::{Context as _, Error};
 use mio::{Events, Poll};
-use stewart::{Context, World};
+use stewart::{Blackboard, Context, World};
 use tracing::{event, instrument, Level};
 
-use crate::{with_thread_context, ThreadContext, WakeEvent, THREAD_CONTEXT};
+use crate::{ThreadContext, ThreadContextEntry, WakeEvent};
 
 // TODO: This entirely needs cleanup, it's way too messy
 
@@ -24,59 +24,63 @@ where
         next_token: 0,
         wake_senders: HashMap::new(),
     };
-    THREAD_CONTEXT.with(|tcx| *tcx.borrow_mut() = Some(thread_context));
+    let thread_context = RefCell::new(thread_context);
+
+    let mut blackboard = Blackboard::default();
+    blackboard.set(thread_context);
 
     // User init
-    let cx = Context::root();
+    let cx = Context::new(blackboard);
     init(&mut world, &cx)?;
 
     // Process pending messages raised from initialization
     event!(Level::TRACE, "processing init messages");
-    world.run_until_idle()?;
+    world.run_until_idle(&cx)?;
 
     // Run the inner mio loop
-    let result = run_poll_loop(&mut world);
+    let result = run_poll_loop(&mut world, &cx);
     if let Err(error) = result {
         // TODO: Shut down or restart the system?
         event!(Level::ERROR, "error in event pipeline: {}", error);
     }
 
-    // TODO: Cleanup doesn't always run for common normal errors, such as user init, fix that
-    THREAD_CONTEXT.with(|tcx| *tcx.borrow_mut() = None);
-
     Ok(())
 }
 
-fn run_poll_loop(world: &mut World) -> Result<(), Error> {
+fn run_poll_loop(world: &mut World, cx: &Context) -> Result<(), Error> {
     let mut events = Events::with_capacity(128);
     loop {
-        with_thread_context(|tcx| {
-            tcx.poll.poll(&mut events, None)?;
+        let tcx = cx
+            .blackboard()
+            .get::<ThreadContextEntry>()
+            .context("failed to get context")?;
+        let mut tcx = tcx.borrow_mut();
+        tcx.poll.poll(&mut events, None)?;
 
-            // Send out wake events
-            for event in events.iter() {
-                event!(Level::TRACE, "sending wake event");
+        // Send out wake events
+        for event in events.iter() {
+            event!(Level::TRACE, "sending wake event");
 
-                // Route event to correct destination
-                let sender = tcx
-                    .wake_senders
-                    .get(&event.token())
-                    .context("failed to get wake sender")?;
+            // Route event to correct destination
+            let sender = tcx
+                .wake_senders
+                .get(&event.token())
+                .context("failed to get wake sender")?;
 
-                sender.handle(
-                    world,
-                    WakeEvent {
-                        read: event.is_readable(),
-                        write: event.is_writable(),
-                    },
-                );
-            }
+            sender.handle(
+                world,
+                WakeEvent {
+                    read: event.is_readable(),
+                    write: event.is_writable(),
+                },
+            );
+        }
 
-            Ok(())
-        })?;
+        // Make sure tcx is no longer borrowed
+        drop(tcx);
 
         // Process all pending actor messages, including wake events
         event!(Level::TRACE, "processing poll step messages");
-        world.run_until_idle()?;
+        world.run_until_idle(&cx)?;
     }
 }

@@ -12,7 +12,7 @@ fn main() -> Result<(), Error> {
     utils::init_logging();
 
     let mut world = World::default();
-    let cx = Context::root();
+    let cx = Context::default();
 
     // Start the hello service
     let service = hello_service::start(&mut world, &cx, "Example".to_string())?;
@@ -46,7 +46,7 @@ fn main() -> Result<(), Error> {
     service.handle(&mut world, message);
 
     // Process messages
-    world.run_until_idle()?;
+    world.run_until_idle(&cx)?;
 
     Ok(())
 }
