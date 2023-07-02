@@ -8,9 +8,9 @@
 mod actor;
 mod any;
 mod context;
+mod handler;
 mod schedule;
 mod tree;
-pub mod utils;
 mod world;
 
 use anyhow::Error;
@@ -19,6 +19,7 @@ use thiserror::Error;
 pub use self::{
     actor::{Actor, State},
     context::Context,
+    handler::Handler,
     world::{Id, World},
 };
 

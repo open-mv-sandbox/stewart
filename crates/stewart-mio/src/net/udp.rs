@@ -2,7 +2,7 @@ use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr};
 
 use anyhow::Error;
 use mio::{Interest, Token};
-use stewart::{utils::Handler, Actor, Context, State, World};
+use stewart::{Actor, Context, Handler, State, World};
 use tracing::{event, Level};
 
 use crate::{with_thread_context, WakeEvent};

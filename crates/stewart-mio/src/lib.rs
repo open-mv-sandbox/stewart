@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 use anyhow::{Context, Error};
 use mio::{Poll, Token};
-use stewart::utils::Handler;
+use stewart::Handler;
 
 pub use self::event_loop::run_event_loop;
 

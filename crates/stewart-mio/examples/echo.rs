@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{utils::Handler, Actor, Context, State, World};
+use stewart::{Actor, Context, Handler, State, World};
 use stewart_mio::net::udp::{self, Packet};
 use tracing::{event, Level};
 

@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{bail, Error};
-use stewart::{utils::Handler, Actor, Context, State, World};
+use stewart::{Actor, Context, Handler, State, World};
 
 pub fn given_mock_actor(world: &mut World, cx: &Context) -> Result<(Context, ActorInfo), Error> {
     let id = world.create(cx, "mock-actor")?;
