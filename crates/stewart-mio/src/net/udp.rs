@@ -2,7 +2,7 @@ use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr};
 
 use anyhow::Error;
 use mio::{Interest, Token};
-use stewart::{utils::Sender, Actor, Context, State};
+use stewart::{utils::Sender, Actor, Context, State, World};
 use tracing::{event, Level};
 
 use crate::{with_thread_context, WakeEvent};
@@ -29,18 +29,19 @@ impl SocketInfo {
 }
 
 pub fn bind(
-    cx: &mut Context,
+    world: &mut World,
+    cx: &Context,
     addr: SocketAddr,
     on_packet: Sender<Packet>,
 ) -> Result<SocketInfo, Error> {
-    let hnd = cx.create("udp-socket")?;
+    let hnd = world.create(cx, "udp-socket")?;
 
     // Create the socket
     let mut socket = mio::net::UdpSocket::bind(addr)?;
     let local_addr = socket.local_addr()?;
 
     // Register the socket with mio
-    let wake = hnd.sender().map(ImplMessage::Wake);
+    let wake = Sender::to(hnd).map(ImplMessage::Wake);
     let token = with_thread_context(|tcx| {
         // Get the next poll token
         let index = tcx.next_token;
@@ -68,10 +69,10 @@ pub fn bind(
         on_packet,
         queue: VecDeque::new(),
     };
-    cx.start(hnd, actor)?;
+    world.start(hnd, actor)?;
 
     let info = SocketInfo {
-        sender: hnd.sender().map(ImplMessage::Send),
+        sender: Sender::to(hnd).map(ImplMessage::Send),
         local_addr,
     };
     Ok(info)
@@ -89,7 +90,12 @@ struct UdpSocket {
 impl Actor for UdpSocket {
     type Message = ImplMessage;
 
-    fn process(&mut self, cx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
+    fn process(
+        &mut self,
+        world: &mut World,
+        _cx: &Context,
+        state: &mut State<Self>,
+    ) -> Result<(), Error> {
         let mut wake = None;
 
         while let Some(message) = state.next() {
@@ -122,10 +128,10 @@ impl Actor for UdpSocket {
 
         if let Some(wake) = wake {
             if wake.read {
-                self.poll_read(cx)?
+                self.poll_read(world)?
             }
             if wake.write {
-                self.poll_write(cx)?
+                self.poll_write()?
             }
         }
 
@@ -134,15 +140,15 @@ impl Actor for UdpSocket {
 }
 
 impl UdpSocket {
-    fn poll_read(&mut self, cx: &mut Context) -> Result<(), Error> {
+    fn poll_read(&mut self, world: &mut World) -> Result<(), Error> {
         event!(Level::TRACE, "polling read");
 
-        while self.try_recv(cx)? {}
+        while self.try_recv(world)? {}
 
         Ok(())
     }
 
-    fn try_recv(&mut self, cx: &mut Context) -> Result<bool, Error> {
+    fn try_recv(&mut self, world: &mut World) -> Result<bool, Error> {
         // Attempt to receive packet
         let result = self.socket.recv_from(&mut self.buffer);
 
@@ -164,15 +170,15 @@ impl UdpSocket {
         // Send the packet to the listener
         let data = self.buffer[..packet_size].to_vec();
         let packet = Packet { peer, data };
-        self.on_packet.send(cx, packet);
+        self.on_packet.send(world, packet);
 
         Ok(true)
     }
 
-    fn poll_write(&mut self, cx: &mut Context) -> Result<(), Error> {
+    fn poll_write(&mut self) -> Result<(), Error> {
         event!(Level::TRACE, "polling write");
 
-        while self.try_send(cx)? {}
+        while self.try_send()? {}
 
         // If we have nothing left, remove the writable registry
         if self.queue.is_empty() {
@@ -187,7 +193,7 @@ impl UdpSocket {
         Ok(())
     }
 
-    fn try_send(&mut self, _cx: &mut Context) -> Result<bool, Error> {
+    fn try_send(&mut self) -> Result<bool, Error> {
         // Check if we have anything to send
         let packet = if let Some(packet) = self.queue.front() {
             packet

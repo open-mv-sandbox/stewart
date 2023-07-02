@@ -58,11 +58,10 @@ where
     fn process(&mut self, world: &mut World, index: Index) {
         // Create a context for this actor
         let hnd = Handle::<A>::new(index);
-        let mut cx = Context::root(world);
-        let mut cx = cx.with(hnd);
+        let cx = Context::root().with(hnd);
 
         // Let the actor's implementation process
-        let result = self.actor.process(&mut cx, &mut self.state);
+        let result = self.actor.process(world, &cx, &mut self.state);
 
         // Check if processing failed
         match result {

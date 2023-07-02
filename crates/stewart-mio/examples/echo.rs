@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{utils::Sender, Actor, Context, State};
+use stewart::{utils::Sender, Actor, Context, State, World};
 use stewart_mio::net::udp::{self, Packet};
 use tracing::{event, Level};
 
@@ -13,14 +13,15 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn init(cx: &mut Context) -> Result<(), Error> {
-    let hnd = cx.create("echo-example")?;
-    let mut cx = cx.with(hnd);
-    let sender = hnd.sender();
+fn init(world: &mut World, cx: &Context) -> Result<(), Error> {
+    let hnd = world.create(cx, "echo-example")?;
+    let cx = cx.with(hnd);
+    let sender = Sender::to(hnd);
 
     // Start the listen port
     let info = udp::bind(
-        &mut cx,
+        world,
+        &cx,
         "0.0.0.0:1234".parse()?,
         sender.clone().map(Message::Server),
     )?;
@@ -29,18 +30,23 @@ fn init(cx: &mut Context) -> Result<(), Error> {
     let server_sender = info.sender().clone();
 
     // Start the client port
-    let info = udp::bind(&mut cx, "0.0.0.0:0".parse()?, sender.map(Message::Client))?;
+    let info = udp::bind(
+        world,
+        &cx,
+        "0.0.0.0:0".parse()?,
+        sender.map(Message::Client),
+    )?;
     event!(Level::INFO, addr = ?info.local_addr(), "sending");
 
     let actor = EchoExample { server_sender };
-    cx.start(hnd, actor)?;
+    world.start(hnd, actor)?;
 
     // Send a message to be echo'd
     let packet = Packet {
         peer: server_addr,
         data: b"Client Packet".to_vec(),
     };
-    info.sender().send(&mut cx, packet);
+    info.sender().send(world, packet);
 
     Ok(())
 }
@@ -52,7 +58,12 @@ struct EchoExample {
 impl Actor for EchoExample {
     type Message = Message;
 
-    fn process(&mut self, cx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
+    fn process(
+        &mut self,
+        world: &mut World,
+        _cx: &Context,
+        state: &mut State<Self>,
+    ) -> Result<(), Error> {
         if let Some(message) = state.next() {
             match message {
                 Message::Server(mut packet) => {
@@ -61,7 +72,7 @@ impl Actor for EchoExample {
 
                     // Echo back
                     packet.data = format!("Hello, {}!", message).into_bytes();
-                    self.server_sender.send(cx, packet);
+                    self.server_sender.send(world, packet);
                 }
                 Message::Client(packet) => {
                     let message = std::str::from_utf8(&packet.data)?;

@@ -4,19 +4,19 @@ use std::{
 };
 
 use anyhow::{bail, Error};
-use stewart::{utils::Sender, Actor, Context, State};
+use stewart::{utils::Sender, Actor, Context, State, World};
 
-pub fn given_mock_actor<'a>(cx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
-    let hnd = cx.create("mock-actor")?;
+pub fn given_mock_actor(world: &mut World, cx: &Context) -> Result<(Context, ActorInfo), Error> {
+    let hnd = world.create(cx, "mock-actor")?;
 
     let instance = MockActor::default();
 
     let count = instance.count.clone();
     let dropped = instance.dropped.clone();
-    cx.start(hnd, instance)?;
+    world.start(hnd, instance)?;
 
     let info = ActorInfo {
-        sender: hnd.sender(),
+        sender: Sender::to(hnd),
         count,
         dropped,
     };
@@ -25,18 +25,18 @@ pub fn given_mock_actor<'a>(cx: &'a mut Context) -> Result<(Context<'a>, ActorIn
     Ok((cx, info))
 }
 
-pub fn given_fail_actor<'a>(cx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
-    let hnd = cx.create("fail-actor")?;
+pub fn given_fail_actor(world: &mut World, cx: &Context) -> Result<(Context, ActorInfo), Error> {
+    let hnd = world.create(cx, "fail-actor")?;
 
     let mut instance = MockActor::default();
     instance.fail = true;
 
     let count = instance.count.clone();
     let dropped = instance.dropped.clone();
-    cx.start(hnd, instance)?;
+    world.start(hnd, instance)?;
 
     let info = ActorInfo {
-        sender: hnd.sender(),
+        sender: Sender::to(hnd),
         count,
         dropped,
     };
@@ -61,7 +61,12 @@ pub struct MockActor {
 impl Actor for MockActor {
     type Message = ();
 
-    fn process(&mut self, _cx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
+    fn process(
+        &mut self,
+        _world: &mut World,
+        _cx: &Context,
+        state: &mut State<Self>,
+    ) -> Result<(), Error> {
         if self.fail {
             bail!("mock intentional fail");
         }

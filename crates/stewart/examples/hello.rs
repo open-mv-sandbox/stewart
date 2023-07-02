@@ -12,10 +12,10 @@ fn main() -> Result<(), Error> {
     utils::init_logging();
 
     let mut world = World::default();
-    let mut cx = Context::root(&mut world);
+    let cx = Context::root();
 
     // Start the hello service
-    let service = hello_service::start(&mut cx, "Example".to_string())?;
+    let service = hello_service::start(&mut world, &cx, "Example".to_string())?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -25,14 +25,14 @@ fn main() -> Result<(), Error> {
         id: Uuid::new_v4(),
         action,
     };
-    service.send(&mut cx, message);
+    service.send(&mut world, message);
 
     let action = hello::Action::Greet("Actors".to_string());
     let message = hello::Message {
         id: Uuid::new_v4(),
         action,
     };
-    service.send(&mut cx, message);
+    service.send(&mut world, message);
 
     // Stop the actor, automatically cleaning up associated resources
     let action = hello::Action::Stop {
@@ -43,7 +43,7 @@ fn main() -> Result<(), Error> {
         id: Uuid::new_v4(),
         action,
     };
-    service.send(&mut cx, message);
+    service.send(&mut world, message);
 
     // Process messages
     world.run_until_idle()?;
@@ -54,7 +54,7 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{utils::Sender, Actor, Context, State};
+    use stewart::{utils::Sender, Actor, Context, State, World};
     use tracing::{event, instrument, Level};
 
     /// Define your public interfaces as a "protocol", which contains just the types necessary to
@@ -86,17 +86,21 @@ mod hello_service {
 
     /// Start a hello service on the current actor world.
     #[instrument("hello::start", skip_all)]
-    pub fn start(cx: &mut Context, name: String) -> Result<Sender<protocol::Message>, Error> {
+    pub fn start(
+        world: &mut World,
+        cx: &Context,
+        name: String,
+    ) -> Result<Sender<protocol::Message>, Error> {
         event!(Level::INFO, "starting");
 
         // Create the actor in the world
-        let hnd = cx.create("hello")?;
+        let hnd = world.create(cx, "hello")?;
 
         // Start the actor
         let actor = Service { name };
-        cx.start(hnd, actor)?;
+        world.start(hnd, actor)?;
 
-        Ok(hnd.sender())
+        Ok(Sender::to(hnd))
     }
 
     /// The actor implementation remains entirely private to the module, only exposed through the
@@ -109,7 +113,12 @@ mod hello_service {
     impl Actor for Service {
         type Message = protocol::Message;
 
-        fn process(&mut self, cx: &mut Context, state: &mut State<Self>) -> Result<(), Error> {
+        fn process(
+            &mut self,
+            world: &mut World,
+            _cx: &Context,
+            state: &mut State<Self>,
+        ) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
             while let Some(message) = state.next() {
@@ -122,7 +131,7 @@ mod hello_service {
                         event!(Level::INFO, "stopping service");
 
                         state.stop();
-                        on_result.send(cx, message.id);
+                        on_result.send(world, message.id);
                     }
                 }
             }

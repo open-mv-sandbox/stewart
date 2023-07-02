@@ -6,7 +6,7 @@ use crate::{
     any::ActorEntry,
     schedule::Schedule,
     tree::{Node, Tree},
-    Actor, Handle, InternalError, StartError,
+    Actor, Context, Handle, InternalError, StartError,
 };
 
 /// Thread-local actor tracking and execution system.
@@ -18,17 +18,25 @@ pub struct World {
 }
 
 impl World {
-    pub(crate) fn create<A>(
+    /// Create a new actor.
+    ///
+    /// The actor's address will not be available for handling messages until `start` is called.
+    ///
+    /// The given `name` will be used in logging.
+    #[instrument("World::create", level = "debug", skip_all)]
+    pub fn create<A>(
         &mut self,
+        cx: &Context,
         name: &'static str,
-        parent: Option<Index>,
-    ) -> Result<Handle<A>, Error>
+    ) -> Result<Handle<A>, InternalError>
     where
         A: Actor,
     {
+        event!(Level::DEBUG, name, "creating actor");
+
         let node = Node {
             name,
-            parent,
+            parent: cx.current(),
             entry: None,
         };
         let index = self.tree.insert(node)?;
@@ -36,8 +44,7 @@ impl World {
         // Track that the actor has to be started
         self.pending_start.push(index);
 
-        let handle = Handle::new(index);
-        Ok(handle)
+        Ok(Handle::new(index))
     }
 
     /// Start the current actor instance, making it available for handling messages.

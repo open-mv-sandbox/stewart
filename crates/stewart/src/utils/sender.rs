@@ -4,9 +4,10 @@ use anyhow::Error;
 use thunderdome::Index;
 use tracing::{event, instrument, Level};
 
-use crate::Context;
+use crate::{Handle, World};
 
 // TODO: Convert all usages of internal-only APIs to use public only interfaces.
+// TODO: Rename to `Handler` once `Handle` is removed.
 
 /// Typed encapsulated message sender.
 ///
@@ -17,8 +18,8 @@ pub struct Sender<M> {
 
 enum Apply<M> {
     Noop,
-    Send(Index),
-    Callback(Rc<dyn Fn(&mut Context, M)>),
+    To(Index),
+    Map(Rc<dyn Fn(&mut World, M)>),
 }
 
 impl<M> Sender<M>
@@ -30,9 +31,10 @@ where
         Self { apply: Apply::Noop }
     }
 
-    pub(crate) fn new_send(index: Index) -> Self {
+    /// Create a sender to a specific actor.
+    pub fn to<A>(hnd: Handle<A>) -> Self {
         Self {
-            apply: Apply::Send(index),
+            apply: Apply::To(hnd.index),
         }
     }
 
@@ -41,36 +43,36 @@ where
     where
         F: Fn(I) -> M + 'static,
     {
-        let callback = move |cx: &mut Context, message: I| {
+        let callback = move |world: &mut World, message: I| {
             let message = callback(message);
-            self.send(cx, message)
+            self.send(world, message)
         };
         let callback = Rc::new(callback);
 
         Sender {
-            apply: Apply::Callback(callback),
+            apply: Apply::Map(callback),
         }
     }
 
     /// Apply the sender, potentially sending a message to a receiving actor.
     #[instrument("Sender::send", level = "debug", skip_all)]
-    pub fn send(&self, cx: &mut Context, message: M) {
+    pub fn send(&self, world: &mut World, message: M) {
         match &self.apply {
             Apply::Noop => {}
-            Apply::Send(index) => {
-                let result = Self::try_send_direct(cx, *index, message);
+            Apply::To(index) => {
+                let result = Self::try_send_direct(world, *index, message);
 
                 // TODO: What to do with this error?
                 if let Err(error) = result {
                     event!(Level::ERROR, ?error, "failed to send message");
                 }
             }
-            Apply::Callback(callback) => callback(cx, message),
+            Apply::Map(callback) => callback(world, message),
         }
     }
 
-    fn try_send_direct(cx: &mut Context, index: Index, message: M) -> Result<(), Error> {
-        cx.send(index, message)?;
+    fn try_send_direct(world: &mut World, index: Index, message: M) -> Result<(), Error> {
+        world.send(index, message)?;
         Ok(())
     }
 }
@@ -79,8 +81,8 @@ impl<M> Clone for Sender<M> {
     fn clone(&self) -> Self {
         let apply = match &self.apply {
             Apply::Noop => Apply::Noop,
-            Apply::Send(index) => Apply::Send(*index),
-            Apply::Callback(callback) => Apply::Callback(callback.clone()),
+            Apply::To(index) => Apply::To(*index),
+            Apply::Map(callback) => Apply::Map(callback.clone()),
         };
 
         Self { apply }

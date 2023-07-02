@@ -12,7 +12,7 @@ use crate::{with_thread_context, ThreadContext, WakeEvent, THREAD_CONTEXT};
 #[instrument("mio-event-loop", skip_all)]
 pub fn run_event_loop<I>(init: I) -> Result<(), Error>
 where
-    I: FnOnce(&mut Context) -> Result<(), Error>,
+    I: FnOnce(&mut World, &Context) -> Result<(), Error>,
 {
     // Set up the local world
     let mut world = World::default();
@@ -27,8 +27,8 @@ where
     THREAD_CONTEXT.with(|tcx| *tcx.borrow_mut() = Some(thread_context));
 
     // User init
-    let mut cx = Context::root(&mut world);
-    init(&mut cx)?;
+    let cx = Context::root();
+    init(&mut world, &cx)?;
 
     // Process pending messages raised from initialization
     event!(Level::TRACE, "processing init messages");
@@ -54,7 +54,6 @@ fn run_poll_loop(world: &mut World) -> Result<(), Error> {
             tcx.poll.poll(&mut events, None)?;
 
             // Send out wake events
-            let mut cx = Context::root(world);
             for event in events.iter() {
                 event!(Level::TRACE, "sending wake event");
 
@@ -65,7 +64,7 @@ fn run_poll_loop(world: &mut World) -> Result<(), Error> {
                     .context("failed to get wake sender")?;
 
                 sender.send(
-                    &mut cx,
+                    world,
                     WakeEvent {
                         read: event.is_readable(),
                         write: event.is_writable(),
