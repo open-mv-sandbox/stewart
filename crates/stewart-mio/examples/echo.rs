@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{utils::Sender, Actor, Context, State, World};
+use stewart::{utils::Handler, Actor, Context, State, World};
 use stewart_mio::net::udp::{self, Packet};
 use tracing::{event, Level};
 
@@ -14,9 +14,9 @@ fn main() -> Result<(), Error> {
 }
 
 fn init(world: &mut World, cx: &Context) -> Result<(), Error> {
-    let hnd = world.create(cx, "echo-example")?;
-    let cx = cx.with(hnd);
-    let sender = Sender::to(hnd);
+    let id = world.create(cx, "echo-example")?;
+    let cx = cx.with(id);
+    let sender = Handler::to(id);
 
     // Start the listen port
     let info = udp::bind(
@@ -39,20 +39,20 @@ fn init(world: &mut World, cx: &Context) -> Result<(), Error> {
     event!(Level::INFO, addr = ?info.local_addr(), "sending");
 
     let actor = EchoExample { server_sender };
-    world.start(hnd, actor)?;
+    world.start(id, actor)?;
 
     // Send a message to be echo'd
     let packet = Packet {
         peer: server_addr,
         data: b"Client Packet".to_vec(),
     };
-    info.sender().send(world, packet);
+    info.sender().handle(world, packet);
 
     Ok(())
 }
 
 struct EchoExample {
-    server_sender: Sender<Packet>,
+    server_sender: Handler<Packet>,
 }
 
 impl Actor for EchoExample {
@@ -72,7 +72,7 @@ impl Actor for EchoExample {
 
                     // Echo back
                     packet.data = format!("Hello, {}!", message).into_bytes();
-                    self.server_sender.send(world, packet);
+                    self.server_sender.handle(world, packet);
                 }
                 Message::Client(packet) => {
                     let message = std::str::from_utf8(&packet.data)?;

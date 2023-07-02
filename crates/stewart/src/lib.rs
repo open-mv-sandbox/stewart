@@ -8,7 +8,6 @@
 mod actor;
 mod any;
 mod context;
-mod handle;
 mod schedule;
 mod tree;
 pub mod utils;
@@ -20,8 +19,7 @@ use thiserror::Error;
 pub use self::{
     actor::{Actor, State},
     context::Context,
-    handle::Handle,
-    world::World,
+    world::{Id, World},
 };
 
 /// Error on actor starting.

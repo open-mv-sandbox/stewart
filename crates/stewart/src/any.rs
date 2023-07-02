@@ -1,10 +1,9 @@
 use std::any::Any;
 
 use anyhow::{Context as _, Error};
-use thunderdome::Index;
 use tracing::{event, Level};
 
-use crate::{Actor, Context, Handle, State, World};
+use crate::{Actor, Context, State, World};
 
 pub trait AnyActorEntry {
     fn is_stop_requested(&self) -> bool;
@@ -13,7 +12,7 @@ pub trait AnyActorEntry {
     fn enqueue(&mut self, slot: &mut dyn Any) -> Result<(), Error>;
 
     /// Process pending messages.
-    fn process(&mut self, world: &mut World, index: Index);
+    fn process(&mut self, world: &mut World, cx: &Context);
 }
 
 pub struct ActorEntry<S>
@@ -55,11 +54,7 @@ where
         Ok(())
     }
 
-    fn process(&mut self, world: &mut World, index: Index) {
-        // Create a context for this actor
-        let hnd = Handle::<A>::new(index);
-        let cx = Context::root().with(hnd);
-
+    fn process(&mut self, world: &mut World, cx: &Context) {
         // Let the actor's implementation process
         let result = self.actor.process(world, &cx, &mut self.state);
 

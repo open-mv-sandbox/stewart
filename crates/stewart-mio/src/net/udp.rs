@@ -2,7 +2,7 @@ use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr};
 
 use anyhow::Error;
 use mio::{Interest, Token};
-use stewart::{utils::Sender, Actor, Context, State, World};
+use stewart::{utils::Handler, Actor, Context, State, World};
 use tracing::{event, Level};
 
 use crate::{with_thread_context, WakeEvent};
@@ -14,12 +14,12 @@ pub struct Packet {
 }
 
 pub struct SocketInfo {
-    sender: Sender<Packet>,
+    sender: Handler<Packet>,
     local_addr: SocketAddr,
 }
 
 impl SocketInfo {
-    pub fn sender(&self) -> &Sender<Packet> {
+    pub fn sender(&self) -> &Handler<Packet> {
         &self.sender
     }
 
@@ -32,16 +32,16 @@ pub fn bind(
     world: &mut World,
     cx: &Context,
     addr: SocketAddr,
-    on_packet: Sender<Packet>,
+    on_packet: Handler<Packet>,
 ) -> Result<SocketInfo, Error> {
-    let hnd = world.create(cx, "udp-socket")?;
+    let id = world.create(cx, "udp-socket")?;
 
     // Create the socket
     let mut socket = mio::net::UdpSocket::bind(addr)?;
     let local_addr = socket.local_addr()?;
 
     // Register the socket with mio
-    let wake = Sender::to(hnd).map(ImplMessage::Wake);
+    let wake = Handler::to(id).map(ImplMessage::Wake);
     let token = with_thread_context(|tcx| {
         // Get the next poll token
         let index = tcx.next_token;
@@ -69,10 +69,10 @@ pub fn bind(
         on_packet,
         queue: VecDeque::new(),
     };
-    world.start(hnd, actor)?;
+    world.start(id, actor)?;
 
     let info = SocketInfo {
-        sender: Sender::to(hnd).map(ImplMessage::Send),
+        sender: Handler::to(id).map(ImplMessage::Send),
         local_addr,
     };
     Ok(info)
@@ -84,7 +84,7 @@ struct UdpSocket {
 
     buffer: Vec<u8>,
     queue: VecDeque<Packet>,
-    on_packet: Sender<Packet>,
+    on_packet: Handler<Packet>,
 }
 
 impl Actor for UdpSocket {
@@ -170,7 +170,7 @@ impl UdpSocket {
         // Send the packet to the listener
         let data = self.buffer[..packet_size].to_vec();
         let packet = Packet { peer, data };
-        self.on_packet.send(world, packet);
+        self.on_packet.handle(world, packet);
 
         Ok(true)
     }

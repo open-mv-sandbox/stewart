@@ -3,9 +3,9 @@ mod mock;
 use std::sync::atomic::Ordering;
 
 use anyhow::{Context as _, Error};
-use stewart::{utils::Sender, Context, World};
+use stewart::{utils::Handler, Context, World};
 
-pub use mock::{given_fail_actor, given_mock_actor, MockActor};
+pub use mock::{given_fail_actor, given_mock_actor};
 
 use self::mock::ActorInfo;
 
@@ -19,8 +19,8 @@ pub fn given_parent_child(
     Ok((parent, child))
 }
 
-pub fn when_sent_message_to(world: &mut World, sender: Sender<()>) -> Result<(), Error> {
-    sender.send(world, ());
+pub fn when_sent_message_to(world: &mut World, sender: Handler<()>) -> Result<(), Error> {
+    sender.handle(world, ());
 
     world
         .run_until_idle()

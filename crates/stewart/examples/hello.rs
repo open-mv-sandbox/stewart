@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{utils::Sender, Context, World};
+use stewart::{utils::Handler, Context, World};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -25,25 +25,25 @@ fn main() -> Result<(), Error> {
         id: Uuid::new_v4(),
         action,
     };
-    service.send(&mut world, message);
+    service.handle(&mut world, message);
 
     let action = hello::Action::Greet("Actors".to_string());
     let message = hello::Message {
         id: Uuid::new_v4(),
         action,
     };
-    service.send(&mut world, message);
+    service.handle(&mut world, message);
 
     // Stop the actor, automatically cleaning up associated resources
     let action = hello::Action::Stop {
         // You don't necessarily need to actually do anything with a callback.
-        on_result: Sender::noop(),
+        on_result: Handler::noop(),
     };
     let message = hello::Message {
         id: Uuid::new_v4(),
         action,
     };
-    service.send(&mut world, message);
+    service.handle(&mut world, message);
 
     // Process messages
     world.run_until_idle()?;
@@ -54,13 +54,13 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{utils::Sender, Actor, Context, State, World};
+    use stewart::{utils::Handler, Actor, Context, State, World};
     use tracing::{event, instrument, Level};
 
     /// Define your public interfaces as a "protocol", which contains just the types necessary to
     /// talk to your service. This is equivalent to an "interface" or "trait".
     pub mod protocol {
-        use stewart::utils::Sender;
+        use stewart::utils::Handler;
         use uuid::Uuid;
 
         /// It's good practice to wrap your service's actions in a `Message` type, for adding
@@ -79,7 +79,7 @@ mod hello_service {
                 /// As part of your protocol, you can include senders to respond.
                 /// Of course when bridging between worlds and across the network, these can't be
                 /// directly serialized, but they can be stored by 'envoy' actors.
-                on_result: Sender<Uuid>,
+                on_result: Handler<Uuid>,
             },
         }
     }
@@ -90,17 +90,17 @@ mod hello_service {
         world: &mut World,
         cx: &Context,
         name: String,
-    ) -> Result<Sender<protocol::Message>, Error> {
+    ) -> Result<Handler<protocol::Message>, Error> {
         event!(Level::INFO, "starting");
 
         // Create the actor in the world
-        let hnd = world.create(cx, "hello")?;
+        let id = world.create(cx, "hello")?;
 
         // Start the actor
         let actor = Service { name };
-        world.start(hnd, actor)?;
+        world.start(id, actor)?;
 
-        Ok(Sender::to(hnd))
+        Ok(Handler::to(id))
     }
 
     /// The actor implementation remains entirely private to the module, only exposed through the
@@ -131,7 +131,7 @@ mod hello_service {
                         event!(Level::INFO, "stopping service");
 
                         state.stop();
-                        on_result.send(world, message.id);
+                        on_result.handle(world, message.id);
                     }
                 }
             }

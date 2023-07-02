@@ -1,6 +1,4 @@
-use thunderdome::Index;
-
-use crate::Handle;
+use crate::Id;
 
 /// Bundle of contextual information for operations.
 ///
@@ -9,7 +7,7 @@ use crate::Handle;
 ///
 /// This can in the future contain more information.
 pub struct Context {
-    current: Option<Index>,
+    current: Option<Id>,
 }
 
 impl Context {
@@ -18,14 +16,12 @@ impl Context {
         Self { current: None }
     }
 
-    /// TODO: Shouldn't be public
-    pub fn with<A>(&self, hnd: Handle<A>) -> Self {
-        Self {
-            current: Some(hnd.index),
-        }
+    /// TODO: Maybe shouldn't be public?
+    pub fn with(&self, id: Id) -> Self {
+        Self { current: Some(id) }
     }
 
-    pub(crate) fn current(&self) -> Option<Index> {
+    pub(crate) fn current(&self) -> Option<Id> {
         self.current
     }
 }

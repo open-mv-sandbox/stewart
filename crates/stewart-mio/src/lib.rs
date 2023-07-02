@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 use anyhow::{Context, Error};
 use mio::{Poll, Token};
-use stewart::utils::Sender;
+use stewart::utils::Handler;
 
 pub use self::event_loop::run_event_loop;
 
@@ -17,7 +17,7 @@ thread_local! {
 struct ThreadContext {
     poll: Poll,
     next_token: usize,
-    wake_senders: HashMap<Token, Sender<WakeEvent>>,
+    wake_senders: HashMap<Token, Handler<WakeEvent>>,
 }
 
 fn with_thread_context<F, O>(f: F) -> Result<O, Error>

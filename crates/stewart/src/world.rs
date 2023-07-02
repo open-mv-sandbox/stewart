@@ -6,7 +6,7 @@ use crate::{
     any::ActorEntry,
     schedule::Schedule,
     tree::{Node, Tree},
-    Actor, Context, Handle, InternalError, StartError,
+    Actor, Context, InternalError, StartError,
 };
 
 /// Thread-local actor tracking and execution system.
@@ -20,23 +20,14 @@ pub struct World {
 impl World {
     /// Create a new actor.
     ///
-    /// The actor's address will not be available for handling messages until `start` is called.
-    ///
     /// The given `name` will be used in logging.
     #[instrument("World::create", level = "debug", skip_all)]
-    pub fn create<A>(
-        &mut self,
-        cx: &Context,
-        name: &'static str,
-    ) -> Result<Handle<A>, InternalError>
-    where
-        A: Actor,
-    {
+    pub fn create(&mut self, cx: &Context, name: &'static str) -> Result<Id, InternalError> {
         event!(Level::DEBUG, name, "creating actor");
 
         let node = Node {
             name,
-            parent: cx.current(),
+            parent: cx.current().map(|v| v.index),
             entry: None,
         };
         let index = self.tree.insert(node)?;
@@ -44,12 +35,12 @@ impl World {
         // Track that the actor has to be started
         self.pending_start.push(index);
 
-        Ok(Handle::new(index))
+        Ok(Id { index })
     }
 
-    /// Start the current actor instance, making it available for handling messages.
+    /// Start an actor instance at an `Id`.
     #[instrument("World::start", level = "debug", skip_all)]
-    pub fn start<A>(&mut self, hnd: Handle<A>, actor: A) -> Result<(), StartError>
+    pub fn start<A>(&mut self, id: Id, actor: A) -> Result<(), StartError>
     where
         A: Actor,
     {
@@ -58,11 +49,11 @@ impl World {
         // Find the node for the actor
         let node = self
             .tree
-            .get_mut(hnd.index)
+            .get_mut(id.index)
             .ok_or(StartError::ActorNotFound)?;
 
         // Validate if it's not started yet
-        let maybe_index = self.pending_start.iter().position(|v| *v == hnd.index);
+        let maybe_index = self.pending_start.iter().position(|v| *v == id.index);
         let pending_index = if let Some(value) = maybe_index {
             value
         } else {
@@ -89,12 +80,27 @@ impl World {
         Ok(())
     }
 
-    pub(crate) fn send<M>(&mut self, index: Index, message: M) -> Result<(), Error>
+    /// Send a message to the actor at the ID.
+    pub fn send<M>(&mut self, id: Id, message: M)
+    where
+        M: 'static,
+    {
+        let result = self.try_send(id, message);
+
+        if let Err(error) = result {
+            event!(Level::ERROR, ?error, "failed to send message");
+        }
+    }
+
+    fn try_send<M>(&mut self, id: Id, message: M) -> Result<(), Error>
     where
         M: 'static,
     {
         // Get the actor in tree
-        let node = self.tree.get_mut(index).context("failed to find actor")?;
+        let node = self
+            .tree
+            .get_mut(id.index)
+            .context("failed to find actor")?;
 
         // Hand the message to the actor
         let entry = node.entry.as_mut().context("actor unavailable")?;
@@ -102,7 +108,7 @@ impl World {
         entry.enqueue(&mut message)?;
 
         // Queue for processing
-        self.schedule.queue_process(index);
+        self.schedule.queue_process(id.index);
 
         Ok(())
     }
@@ -131,7 +137,8 @@ impl World {
         event!(Level::DEBUG, "processing actor");
 
         // Run the process sender
-        actor.process(self, index);
+        let cx = Context::root().with(Id { index });
+        actor.process(self, &cx);
         let stop = actor.is_stop_requested();
 
         // Return the actor
@@ -171,4 +178,10 @@ impl Drop for World {
             );
         }
     }
+}
+
+/// Actor ID, for performing operations directly on a specific actor.
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct Id {
+    index: Index,
 }

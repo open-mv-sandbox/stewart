@@ -63,7 +63,7 @@ fn run_poll_loop(world: &mut World) -> Result<(), Error> {
                     .get(&event.token())
                     .context("failed to get wake sender")?;
 
-                sender.send(
+                sender.handle(
                     world,
                     WakeEvent {
                         read: event.is_readable(),

@@ -4,55 +4,55 @@ use std::{
 };
 
 use anyhow::{bail, Error};
-use stewart::{utils::Sender, Actor, Context, State, World};
+use stewart::{utils::Handler, Actor, Context, State, World};
 
 pub fn given_mock_actor(world: &mut World, cx: &Context) -> Result<(Context, ActorInfo), Error> {
-    let hnd = world.create(cx, "mock-actor")?;
+    let id = world.create(cx, "mock-actor")?;
 
     let instance = MockActor::default();
 
     let count = instance.count.clone();
     let dropped = instance.dropped.clone();
-    world.start(hnd, instance)?;
+    world.start(id, instance)?;
 
     let info = ActorInfo {
-        sender: Sender::to(hnd),
+        sender: Handler::to(id),
         count,
         dropped,
     };
 
-    let cx = cx.with(hnd);
+    let cx = cx.with(id);
     Ok((cx, info))
 }
 
 pub fn given_fail_actor(world: &mut World, cx: &Context) -> Result<(Context, ActorInfo), Error> {
-    let hnd = world.create(cx, "fail-actor")?;
+    let id = world.create(cx, "fail-actor")?;
 
     let mut instance = MockActor::default();
     instance.fail = true;
 
     let count = instance.count.clone();
     let dropped = instance.dropped.clone();
-    world.start(hnd, instance)?;
+    world.start(id, instance)?;
 
     let info = ActorInfo {
-        sender: Sender::to(hnd),
+        sender: Handler::to(id),
         count,
         dropped,
     };
 
-    let cx = cx.with(hnd);
+    let cx = cx.with(id);
     Ok((cx, info))
 }
 
 pub struct ActorInfo {
-    pub sender: Sender<()>,
+    pub sender: Handler<()>,
     pub count: Rc<AtomicUsize>,
     pub dropped: Rc<AtomicBool>,
 }
 
 #[derive(Default)]
-pub struct MockActor {
+struct MockActor {
     count: Rc<AtomicUsize>,
     dropped: Rc<AtomicBool>,
     fail: bool,
