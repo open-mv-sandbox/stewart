@@ -60,9 +60,7 @@ impl World {
 
         // Validate if it's not started yet
         let maybe_index = self.pending_start.iter().position(|v| *v == id.index);
-        let pending_index = if let Some(value) = maybe_index {
-            value
-        } else {
+        let Some(pending_index) = maybe_index else {
             return Err(StartError::ActorAlreadyStarted);
         };
 

@@ -153,7 +153,7 @@ impl UdpSocket {
         let result = self.socket.recv_from(&mut self.buffer);
 
         // Check result
-        let (packet_size, peer) = match result {
+        let (size, peer) = match result {
             Ok(value) => value,
             Err(error) => {
                 // WouldBlock just means we've run out of things to handle
@@ -168,7 +168,7 @@ impl UdpSocket {
         event!(Level::DEBUG, ?peer, "received incoming packet");
 
         // Send the packet to the listener
-        let data = self.buffer[..packet_size].to_vec();
+        let data = self.buffer[..size].to_vec();
         let packet = Packet { peer, data };
         self.on_packet.handle(world, packet);
 
@@ -195,11 +195,7 @@ impl UdpSocket {
 
     fn try_send(&mut self) -> Result<bool, Error> {
         // Check if we have anything to send
-        let packet = if let Some(packet) = self.queue.front() {
-            packet
-        } else {
-            return Ok(false);
-        };
+        let Some(packet) = self.queue.front() else { return Ok(false) };
 
         // Attempt to send it
         let result = self.socket.send_to(&packet.data, packet.peer);

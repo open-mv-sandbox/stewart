@@ -59,16 +59,13 @@ where
         let result = self.actor.process(world, &cx, &mut self.state);
 
         // Check if processing failed
-        match result {
-            Ok(value) => value,
-            Err(error) => {
-                event!(Level::ERROR, ?error, "error while processing");
+        if let Err(error) = result {
+            event!(Level::ERROR, ?error, "error while processing");
 
-                // If a processing error happens, the actor should be stopped.
-                // It's better to stop than to potentially retain inconsistent state.
-                self.state.stop();
-                return;
-            }
+            // If a processing error happens, the actor should be stopped.
+            // It's better to stop than to potentially retain inconsistent state.
+            self.state.stop();
+            return;
         }
 
         // Sanity warning, these are things a correctly processing actor should do
