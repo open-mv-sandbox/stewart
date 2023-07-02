@@ -50,7 +50,7 @@ where
     }
 
     /// Apply the handler, potentially sending a message to a receiving actor.
-    #[instrument("Sender::send", level = "debug", skip_all)]
+    #[instrument("Handler::handle", level = "debug", skip_all)]
     pub fn handle(&self, world: &mut World, message: M) {
         match &self.apply {
             Apply::Noop => {}

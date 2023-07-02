@@ -6,13 +6,11 @@ use std::{
 
 use crate::Id;
 
-/// Bundle of contextual information for operations.
+/// Bundle of contextual information.
 ///
 /// Currently tracks:
 /// - Current actor
 /// - Blackboard of contextual data
-///
-/// This can in the future contain more information.
 #[derive(Default)]
 pub struct Context {
     blackboard: Rc<Blackboard>,
