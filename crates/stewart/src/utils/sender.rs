@@ -6,6 +6,8 @@ use tracing::{event, instrument, Level};
 
 use crate::Context;
 
+// TODO: Convert all usages of internal-only APIs to use public only interfaces.
+
 /// Typed encapsulated message sender.
 ///
 /// May send a message to one or more actors, after potentially transforming it.

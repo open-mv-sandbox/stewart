@@ -5,12 +5,18 @@ use tracing::{event, instrument, Level};
 
 use crate::{Actor, Handle, InternalError, World};
 
-/// Context to perform operations in.
+// TODO: Convert all usages of internal-only APIs to use public only interfaces.
+
+/// Bundle of contextual information for operations.
 ///
-/// This type bundles the other types the actions will be operated on, the world and the schedule,
-/// and the context it will be operated in, such as the current actor.
+/// Currently tracks:
+/// - Current actor, for creation of child actors.
+///
+/// This can in the future contain more information.
 pub struct Context<'a> {
-    pub(crate) world: &'a mut World,
+    // TODO: Probably shouldn't bundle world in this, can instead have world just take the context
+    // as parameter.
+    world: &'a mut World,
     current: Option<Index>,
 }
 
@@ -42,11 +48,7 @@ impl<'a> Context<'a> {
         A: Actor,
     {
         event!(Level::DEBUG, name, "creating actor");
-
-        // TODO: Ensure correct message type and actor are associated
-
         let hnd = self.world.create(name, self.current)?;
-
         Ok(hnd)
     }
 }

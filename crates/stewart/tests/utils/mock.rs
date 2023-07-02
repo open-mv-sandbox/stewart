@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{bail, Error};
-use stewart::{Actor, Context, Sender, State};
+use stewart::{utils::Sender, Actor, Context, State};
 
 pub fn given_mock_actor<'a>(cx: &'a mut Context) -> Result<(Context<'a>, ActorInfo), Error> {
     let hnd = cx.create("mock-actor")?;

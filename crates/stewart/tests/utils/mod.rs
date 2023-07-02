@@ -3,7 +3,7 @@ mod mock;
 use std::sync::atomic::Ordering;
 
 use anyhow::{Context as _, Error};
-use stewart::{Context, Sender, World};
+use stewart::{utils::Sender, Context, World};
 
 pub use mock::{given_fail_actor, given_mock_actor, MockActor};
 

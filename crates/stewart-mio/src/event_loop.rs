@@ -5,7 +5,9 @@ use mio::{Events, Poll};
 use stewart::{Context, World};
 use tracing::{event, instrument, Level};
 
-use crate::{with_thread_context, ThreadContext, THREAD_CONTEXT};
+use crate::{with_thread_context, ThreadContext, WakeEvent, THREAD_CONTEXT};
+
+// TODO: This entirely needs cleanup, it's way too messy
 
 #[instrument("mio-event-loop", skip_all)]
 pub fn run_event_loop<I>(init: I) -> Result<(), Error>
@@ -27,6 +29,10 @@ where
     // User init
     let mut cx = Context::root(&mut world);
     init(&mut cx)?;
+
+    // Process pending messages raised from initialization
+    event!(Level::TRACE, "processing init messages");
+    world.run_until_idle()?;
 
     // Run the inner mio loop
     let result = run_poll_loop(&mut world);
@@ -58,14 +64,20 @@ fn run_poll_loop(world: &mut World) -> Result<(), Error> {
                     .get(&event.token())
                     .context("failed to get wake sender")?;
 
-                sender.send(&mut cx, ());
+                sender.send(
+                    &mut cx,
+                    WakeEvent {
+                        read: event.is_readable(),
+                        write: event.is_writable(),
+                    },
+                );
             }
-
-            // Process all pending actor messages, including wake events
-            event!(Level::TRACE, "processing events");
-            world.run_until_idle()?;
 
             Ok(())
         })?;
+
+        // Process all pending actor messages, including wake events
+        event!(Level::TRACE, "processing poll step messages");
+        world.run_until_idle()?;
     }
 }

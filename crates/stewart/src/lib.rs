@@ -10,8 +10,8 @@ mod any;
 mod context;
 mod handle;
 mod schedule;
-mod sender;
 mod tree;
+pub mod utils;
 mod world;
 
 use anyhow::Error;
@@ -21,7 +21,6 @@ pub use self::{
     actor::{Actor, State},
     context::Context,
     handle::Handle,
-    sender::Sender,
     world::World,
 };
 

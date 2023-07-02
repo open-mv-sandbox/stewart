@@ -2,7 +2,7 @@ use std::{marker::PhantomData, sync::atomic::AtomicPtr};
 
 use thunderdome::Index;
 
-use crate::{Actor, Sender};
+use crate::{utils::Sender, Actor};
 
 /// Typed actor handle, for performing operations on an actor.
 pub struct Handle<A> {
@@ -22,6 +22,8 @@ where
     }
 
     /// Create a sender that sends messages to this actor.
+    ///
+    /// TODO: Remove dependencies on utils.
     pub fn sender(&self) -> Sender<A::Message> {
         Sender::new_send(self.index)
     }

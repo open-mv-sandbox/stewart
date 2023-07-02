@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{Context, Sender, World};
+use stewart::{utils::Sender, Context, World};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -54,13 +54,13 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{Actor, Context, Sender, State};
+    use stewart::{utils::Sender, Actor, Context, State};
     use tracing::{event, instrument, Level};
 
     /// Define your public interfaces as a "protocol", which contains just the types necessary to
     /// talk to your service. This is equivalent to an "interface" or "trait".
     pub mod protocol {
-        use stewart::Sender;
+        use stewart::utils::Sender;
         use uuid::Uuid;
 
         /// It's good practice to wrap your service's actions in a `Message` type, for adding
