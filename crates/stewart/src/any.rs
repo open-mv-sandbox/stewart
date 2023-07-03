@@ -1,13 +1,13 @@
 use std::{any::Any, collections::VecDeque};
 
-use anyhow::{Context as _, Error};
+use anyhow::Context as _;
 use tracing::{event, Level};
 
-use crate::{Actor, Context, Id, World};
+use crate::{Actor, Context, Id, InternalError, SendError, World};
 
 pub trait AnyActorEntry {
     /// Add a message to be handled to the actor's internal queue.
-    fn enqueue(&mut self, slot: &mut dyn Any) -> Result<(), Error>;
+    fn enqueue(&mut self, slot: &mut dyn Any) -> Result<(), SendError>;
 
     /// Process pending messages.
     fn process(&mut self, world: &mut World) -> bool;
@@ -39,11 +39,14 @@ impl<A> AnyActorEntry for ActorEntry<A>
 where
     A: Actor,
 {
-    fn enqueue(&mut self, slot: &mut dyn Any) -> Result<(), Error> {
+    fn enqueue(&mut self, slot: &mut dyn Any) -> Result<(), SendError> {
         // Take the message out
         let slot: &mut Option<A::Message> =
-            slot.downcast_mut().context("incorrect message type")?;
-        let message = slot.take().context("message not in slot")?;
+            slot.downcast_mut().ok_or(SendError::IncorrectMessageType)?;
+        let message = slot
+            .take()
+            .context("message not in slot")
+            .map_err(InternalError)?;
 
         self.queue.push_back(message);
 

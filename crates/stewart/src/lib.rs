@@ -33,7 +33,25 @@ pub enum StartError {
     ActorNotFound,
     /// Internal error.
     #[error("internal error")]
-    InternalError(InternalError),
+    InternalError(#[from] InternalError),
+}
+
+/// Error on sending.
+#[derive(Error, Debug)]
+#[non_exhaustive]
+pub enum SendError {
+    /// The actor couldn't be found.
+    #[error("actor not found")]
+    ActorNotFound,
+    /// The actor isn't available.
+    #[error("actor not available")]
+    ActorNotAvailable,
+    /// The actor cannot accept a message of the given type.
+    #[error("incorrect message type")]
+    IncorrectMessageType,
+    /// Internal error.
+    #[error("internal error")]
+    InternalError(#[from] InternalError),
 }
 
 /// Internal error, this is always a bug.

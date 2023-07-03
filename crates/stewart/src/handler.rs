@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use tracing::instrument;
+use tracing::{event, instrument, Level};
 
 use crate::{Id, World};
 
@@ -54,7 +54,12 @@ where
     pub fn handle(&self, world: &mut World, message: M) {
         match &self.apply {
             Apply::Noop => {}
-            Apply::To(id) => world.send(*id, message),
+            Apply::To(id) => {
+                let result = world.send(*id, message);
+                if let Err(error) = result {
+                    event!(Level::ERROR, ?error, "failed to send message");
+                }
+            }
             Apply::Map(callback) => callback(world, message),
         }
     }

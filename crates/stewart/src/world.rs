@@ -6,7 +6,7 @@ use crate::{
     any::ActorEntry,
     schedule::Schedule,
     tree::{Node, Tree},
-    Actor, InternalError, StartError,
+    Actor, InternalError, SendError, StartError,
 };
 
 /// Thread-local actor tracking and execution system.
@@ -80,18 +80,7 @@ impl World {
     }
 
     /// Send a message to the actor at the ID.
-    pub fn send<M>(&mut self, id: Id, message: M)
-    where
-        M: 'static,
-    {
-        let result = self.try_send(id, message);
-
-        if let Err(error) = result {
-            event!(Level::ERROR, ?error, "failed to send message");
-        }
-    }
-
-    fn try_send<M>(&mut self, id: Id, message: M) -> Result<(), Error>
+    pub fn send<M>(&mut self, id: Id, message: M) -> Result<(), SendError>
     where
         M: 'static,
     {
@@ -99,10 +88,10 @@ impl World {
         let node = self
             .tree
             .get_mut(id.index)
-            .context("failed to find actor")?;
+            .ok_or(SendError::ActorNotFound)?;
 
         // Hand the message to the actor
-        let entry = node.entry.as_mut().context("actor unavailable")?;
+        let entry = node.entry.as_mut().ok_or(SendError::ActorNotAvailable)?;
         let mut message = Some(message);
         entry.enqueue(&mut message)?;
 
