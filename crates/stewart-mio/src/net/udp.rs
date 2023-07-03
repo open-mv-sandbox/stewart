@@ -1,11 +1,11 @@
-use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr};
+use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr, rc::Rc};
 
-use anyhow::{Context as _, Error};
+use anyhow::Error;
 use mio::{Interest, Token};
 use stewart::{Actor, Context, Handler, State, World};
 use tracing::{event, Level};
 
-use crate::event_loop::{MioContext, WakeEvent};
+use crate::{registry::WakeEvent, Registry};
 
 #[derive(Debug)]
 pub struct Packet {
@@ -31,6 +31,7 @@ impl SocketInfo {
 pub fn bind(
     world: &mut World,
     cx: &Context,
+    registry: Rc<Registry>,
     addr: SocketAddr,
     on_packet: Handler<Packet>,
 ) -> Result<SocketInfo, Error> {
@@ -40,18 +41,14 @@ pub fn bind(
     let mut socket = mio::net::UdpSocket::bind(addr)?;
     let local_addr = socket.local_addr()?;
 
-    let tcx = cx
-        .blackboard()
-        .get::<MioContext>()
-        .context("failed to get context")?;
-
     // Register the socket
     let wake = Handler::to(id).map(ImplMessage::Wake);
-    let token = tcx.register(wake, &mut socket, Interest::READABLE)?;
+    let token = registry.register(wake, &mut socket, Interest::READABLE)?;
 
     // TODO: Registry cleanup when the socket is stopped
 
     let actor = UdpSocket {
+        registry,
         socket,
         token,
 
@@ -70,6 +67,7 @@ pub fn bind(
 }
 
 struct UdpSocket {
+    registry: Rc<Registry>,
     socket: mio::net::UdpSocket,
     token: Token,
 
@@ -84,7 +82,7 @@ impl Actor for UdpSocket {
     fn process(
         &mut self,
         world: &mut World,
-        cx: &Context,
+        _cx: &Context,
         state: &mut State<Self>,
     ) -> Result<(), Error> {
         let mut wake = None;
@@ -100,12 +98,7 @@ impl Actor for UdpSocket {
 
                     // Reregister so we can receive write events
                     if should_register {
-                        let tcx = cx
-                            .blackboard()
-                            .get::<MioContext>()
-                            .context("failed to get context")?;
-
-                        tcx.reregister(
+                        self.registry.reregister(
                             &mut self.socket,
                             self.token,
                             Interest::READABLE | Interest::WRITABLE,
@@ -124,7 +117,7 @@ impl Actor for UdpSocket {
                 self.poll_read(world)?
             }
             if wake.write {
-                self.poll_write(cx)?
+                self.poll_write()?
             }
         }
 
@@ -168,19 +161,15 @@ impl UdpSocket {
         Ok(true)
     }
 
-    fn poll_write(&mut self, cx: &Context) -> Result<(), Error> {
+    fn poll_write(&mut self) -> Result<(), Error> {
         event!(Level::TRACE, "polling write");
 
         while self.try_send()? {}
 
         // If we have nothing left, remove the writable registry
         if self.queue.is_empty() {
-            let tcx = cx
-                .blackboard()
-                .get::<MioContext>()
-                .context("failed to get context")?;
-
-            tcx.reregister(&mut self.socket, self.token, Interest::READABLE)?;
+            self.registry
+                .reregister(&mut self.socket, self.token, Interest::READABLE)?;
         }
 
         Ok(())

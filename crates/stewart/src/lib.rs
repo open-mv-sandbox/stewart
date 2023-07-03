@@ -18,7 +18,7 @@ use thiserror::Error;
 
 pub use self::{
     actor::{Actor, State},
-    context::{Blackboard, Context},
+    context::Context,
     handler::Handler,
     world::{Id, World},
 };

@@ -1,8 +1,13 @@
 mod utils;
 
+use std::rc::Rc;
+
 use anyhow::Error;
 use stewart::{Actor, Context, Handler, State, World};
-use stewart_mio::net::udp::{self, Packet};
+use stewart_mio::{
+    net::udp::{self, Packet},
+    Registry,
+};
 use tracing::{event, Level};
 
 fn main() -> Result<(), Error> {
@@ -13,7 +18,7 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn init(world: &mut World, cx: &Context) -> Result<(), Error> {
+fn init(world: &mut World, cx: &Context, registry: &Rc<Registry>) -> Result<(), Error> {
     let (cx, id) = world.create(cx, "echo-example")?;
     let sender = Handler::to(id);
 
@@ -21,6 +26,7 @@ fn init(world: &mut World, cx: &Context) -> Result<(), Error> {
     let info = udp::bind(
         world,
         &cx,
+        registry.clone(),
         "0.0.0.0:1234".parse()?,
         sender.clone().map(Message::Server),
     )?;
@@ -32,6 +38,7 @@ fn init(world: &mut World, cx: &Context) -> Result<(), Error> {
     let info = udp::bind(
         world,
         &cx,
+        registry.clone(),
         "0.0.0.0:0".parse()?,
         sender.map(Message::Client),
     )?;
