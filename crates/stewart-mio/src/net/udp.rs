@@ -5,7 +5,7 @@ use mio::{Interest, Token};
 use stewart::{Actor, Context, Handler, State, World};
 use tracing::{event, Level};
 
-use crate::{event_loop::ThreadContext, WakeEvent};
+use crate::{event_loop::MioContext, WakeEvent};
 
 #[derive(Debug)]
 pub struct Packet {
@@ -42,7 +42,7 @@ pub fn bind(
 
     let tcx = cx
         .blackboard()
-        .get::<ThreadContext>()
+        .get::<MioContext>()
         .context("failed to get context")?;
 
     // Register the socket
@@ -102,7 +102,7 @@ impl Actor for UdpSocket {
                     if should_register {
                         let tcx = cx
                             .blackboard()
-                            .get::<ThreadContext>()
+                            .get::<MioContext>()
                             .context("failed to get context")?;
 
                         tcx.reregister(
@@ -177,7 +177,7 @@ impl UdpSocket {
         if self.queue.is_empty() {
             let tcx = cx
                 .blackboard()
-                .get::<ThreadContext>()
+                .get::<MioContext>()
                 .context("failed to get context")?;
 
             tcx.reregister(&mut self.socket, self.token, Interest::READABLE)?;

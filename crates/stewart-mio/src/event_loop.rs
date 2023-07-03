@@ -23,7 +23,7 @@ where
 
     // Initialize mio context
     let poll = Poll::new()?;
-    let thread_context = ThreadContext::new(poll);
+    let thread_context = MioContext::new(poll);
 
     let mut blackboard = Blackboard::default();
     blackboard.set(thread_context);
@@ -51,7 +51,7 @@ fn run_poll_loop(world: &mut World, cx: &Context) -> Result<(), Error> {
     loop {
         let tcx = cx
             .blackboard()
-            .get::<ThreadContext>()
+            .get::<MioContext>()
             .context("failed to get context")?;
         tcx.poll.borrow_mut().poll(&mut events, None)?;
 
@@ -83,13 +83,13 @@ fn run_poll_loop(world: &mut World, cx: &Context) -> Result<(), Error> {
     }
 }
 
-pub struct ThreadContext {
+pub struct MioContext {
     poll: RefCell<Poll>,
     next_token: AtomicUsize,
     wake_senders: RefCell<HashMap<Token, Handler<WakeEvent>>>,
 }
 
-impl ThreadContext {
+impl MioContext {
     fn new(poll: Poll) -> Self {
         Self {
             poll: RefCell::new(poll),
