@@ -56,8 +56,9 @@ mod hello_service {
     use stewart::{Actor, Context, Handler, Id, World};
     use tracing::{event, instrument, Level};
 
-    /// Define your public interfaces as a "protocol", which contains just the types necessary to
-    /// talk to your service. This is equivalent to an "interface" or "trait".
+    /// You can define your public interfaces as a "protocol", which contains just the types
+    /// necessary to talk to your service.
+    /// This is equivalent to an "interface" or "trait".
     pub mod protocol {
         use stewart::Handler;
         use uuid::Uuid;

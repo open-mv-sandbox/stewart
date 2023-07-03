@@ -54,6 +54,12 @@ fn init(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
     };
     info.sender().handle(world, packet);
 
+    let packet = Packet {
+        peer: server_addr,
+        data: b"Another Packet of Data That's A Bit Longer".to_vec(),
+    };
+    info.sender().handle(world, packet);
+
     Ok(())
 }
 
@@ -65,14 +71,14 @@ impl Actor for EchoExample {
     type Message = Message;
 
     fn process(&mut self, world: &mut World, mut cx: Context<Self>) -> Result<(), Error> {
-        if let Some(message) = cx.next() {
+        while let Some(message) = cx.next() {
             match message {
                 Message::Server(mut packet) => {
                     let message = std::str::from_utf8(&packet.data)?;
                     event!(Level::INFO, data = message, "server received packet");
 
-                    // Echo back
-                    packet.data = format!("Hello, {}!", message).into_bytes();
+                    // Echo back with a hello message
+                    packet.data = format!("Hello, \"{}\"!", message).into_bytes();
                     self.server_sender.handle(world, packet);
                 }
                 Message::Client(packet) => {

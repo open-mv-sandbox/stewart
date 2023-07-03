@@ -136,8 +136,7 @@ impl World {
         event!(Level::DEBUG, "processing actor");
 
         // Run the process sender
-        actor.process(self);
-        let stop = actor.is_stop_requested();
+        let stop = actor.process(self);
 
         // Return the actor
         let node = self
