@@ -5,7 +5,7 @@ use mio::{Interest, Token};
 use stewart::{Actor, Context, Handler, State, World};
 use tracing::{event, Level};
 
-use crate::{ThreadContextEntry, WakeEvent};
+use crate::{event_loop::ThreadContext, WakeEvent};
 
 #[derive(Debug)]
 pub struct Packet {
@@ -42,23 +42,12 @@ pub fn bind(
 
     let tcx = cx
         .blackboard()
-        .get::<ThreadContextEntry>()
+        .get::<ThreadContext>()
         .context("failed to get context")?;
-    let mut tcx = tcx.borrow_mut();
-
-    // Get the next poll token
-    let index = tcx.next_token;
-    tcx.next_token += 1;
-    let token = Token(index);
 
     // Register the socket
     let wake = Handler::to(id).map(ImplMessage::Wake);
-    tcx.poll
-        .registry()
-        .register(&mut socket, token, Interest::READABLE)?;
-
-    // Store routing for receiving wakeup events
-    tcx.wake_senders.insert(token, wake);
+    let token = tcx.register(wake, &mut socket, Interest::READABLE)?;
 
     // TODO: Registry cleanup when the socket is stopped
 
@@ -113,11 +102,10 @@ impl Actor for UdpSocket {
                     if should_register {
                         let tcx = cx
                             .blackboard()
-                            .get::<ThreadContextEntry>()
+                            .get::<ThreadContext>()
                             .context("failed to get context")?;
-                        let tcx = tcx.borrow_mut();
 
-                        tcx.poll.registry().reregister(
+                        tcx.reregister(
                             &mut self.socket,
                             self.token,
                             Interest::READABLE | Interest::WRITABLE,
@@ -189,13 +177,10 @@ impl UdpSocket {
         if self.queue.is_empty() {
             let tcx = cx
                 .blackboard()
-                .get::<ThreadContextEntry>()
+                .get::<ThreadContext>()
                 .context("failed to get context")?;
-            let tcx = tcx.borrow_mut();
 
-            tcx.poll
-                .registry()
-                .reregister(&mut self.socket, self.token, Interest::READABLE)?;
+            tcx.reregister(&mut self.socket, self.token, Interest::READABLE)?;
         }
 
         Ok(())

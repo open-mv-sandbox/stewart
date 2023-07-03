@@ -1,11 +1,15 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use anyhow::{Context as _, Error};
-use mio::{Events, Poll};
-use stewart::{Blackboard, Context, World};
+use mio::{event::Source, Events, Interest, Poll, Token};
+use stewart::{Blackboard, Context, Handler, World};
 use tracing::{event, instrument, Level};
 
-use crate::{ThreadContext, ThreadContextEntry, WakeEvent};
+use crate::WakeEvent;
 
 // TODO: This entirely needs cleanup, it's way too messy
 
@@ -19,12 +23,7 @@ where
 
     // Initialize mio context
     let poll = Poll::new()?;
-    let thread_context = ThreadContext {
-        poll,
-        next_token: 0,
-        wake_senders: HashMap::new(),
-    };
-    let thread_context = RefCell::new(thread_context);
+    let thread_context = ThreadContext::new(poll);
 
     let mut blackboard = Blackboard::default();
     blackboard.set(thread_context);
@@ -52,18 +51,17 @@ fn run_poll_loop(world: &mut World, cx: &Context) -> Result<(), Error> {
     loop {
         let tcx = cx
             .blackboard()
-            .get::<ThreadContextEntry>()
+            .get::<ThreadContext>()
             .context("failed to get context")?;
-        let mut tcx = tcx.borrow_mut();
-        tcx.poll.poll(&mut events, None)?;
+        tcx.poll.borrow_mut().poll(&mut events, None)?;
 
         // Send out wake events
         for event in events.iter() {
             event!(Level::TRACE, "sending wake event");
 
             // Route event to correct destination
-            let sender = tcx
-                .wake_senders
+            let wake_senders = tcx.wake_senders.borrow();
+            let sender = wake_senders
                 .get(&event.token())
                 .context("failed to get wake sender")?;
 
@@ -82,5 +80,63 @@ fn run_poll_loop(world: &mut World, cx: &Context) -> Result<(), Error> {
         // Process all pending actor messages, including wake events
         event!(Level::TRACE, "processing poll step messages");
         world.run_until_idle(&cx)?;
+    }
+}
+
+pub struct ThreadContext {
+    poll: RefCell<Poll>,
+    next_token: AtomicUsize,
+    wake_senders: RefCell<HashMap<Token, Handler<WakeEvent>>>,
+}
+
+impl ThreadContext {
+    fn new(poll: Poll) -> Self {
+        Self {
+            poll: RefCell::new(poll),
+            next_token: AtomicUsize::new(0),
+            wake_senders: Default::default(),
+        }
+    }
+
+    pub(crate) fn register<S>(
+        &self,
+        wake: Handler<WakeEvent>,
+        source: &mut S,
+        interest: Interest,
+    ) -> Result<Token, Error>
+    where
+        S: Source,
+    {
+        // Get the next poll token
+        let index = self.next_token.fetch_add(1, Ordering::SeqCst);
+        let token = Token(index);
+
+        // Store the waker callback
+        self.wake_senders.borrow_mut().insert(token, wake);
+
+        // Register with the generated token
+        self.poll
+            .borrow()
+            .registry()
+            .register(source, token, interest)?;
+
+        Ok(token)
+    }
+
+    pub fn reregister<S>(
+        &self,
+        source: &mut S,
+        token: Token,
+        interest: Interest,
+    ) -> Result<(), Error>
+    where
+        S: Source,
+    {
+        self.poll
+            .borrow()
+            .registry()
+            .reregister(source, token, interest)?;
+
+        Ok(())
     }
 }
