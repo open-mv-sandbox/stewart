@@ -6,7 +6,7 @@ use crate::{
     any::ActorEntry,
     schedule::Schedule,
     tree::{Node, Tree},
-    Actor, Context, InternalError, StartError,
+    Actor, InternalError, StartError,
 };
 
 /// Thread-local actor tracking and execution system.
@@ -22,16 +22,12 @@ impl World {
     ///
     /// The given `name` will be used in logging.
     #[instrument("World::create", level = "debug", skip_all)]
-    pub fn create(
-        &mut self,
-        cx: &Context,
-        name: &'static str,
-    ) -> Result<(Context, Id), InternalError> {
+    pub fn create(&mut self, parent: Option<Id>, name: &'static str) -> Result<Id, InternalError> {
         event!(Level::DEBUG, name, "creating actor");
 
         let node = Node {
             name,
-            parent: cx.current().map(|v| v.index),
+            parent: parent.map(|v| v.index),
             entry: None,
         };
         let index = self.tree.insert(node)?;
@@ -40,8 +36,7 @@ impl World {
         self.pending_start.push(index);
 
         let id = Id { index };
-        let cx = cx.with_current(id);
-        Ok((cx, id))
+        Ok(id)
     }
 
     /// Start an actor instance at an `Id`.
@@ -65,7 +60,7 @@ impl World {
         };
 
         // Give the actor to the node
-        let entry = ActorEntry::new(actor);
+        let entry = ActorEntry::new(id, actor);
         node.entry = Some(Box::new(entry));
 
         // Finalize remove pending
@@ -119,11 +114,11 @@ impl World {
 
     /// Process all pending messages, until none are left.
     #[instrument("World::run_until_idle", level = "debug", skip_all)]
-    pub fn run_until_idle(&mut self, cx: &Context) -> Result<(), InternalError> {
+    pub fn run_until_idle(&mut self) -> Result<(), InternalError> {
         self.timeout_starting()?;
 
         while let Some(index) = self.schedule.next() {
-            self.process(cx, index).context("failed to process")?;
+            self.process(index).context("failed to process")?;
 
             self.timeout_starting()?;
         }
@@ -131,7 +126,7 @@ impl World {
         Ok(())
     }
 
-    pub(crate) fn process(&mut self, cx: &Context, index: Index) -> Result<(), Error> {
+    pub(crate) fn process(&mut self, index: Index) -> Result<(), Error> {
         // Borrow the actor
         let node = self.tree.get_mut(index).context("failed to find actor")?;
         let mut actor = node.entry.take().context("actor unavailable")?;
@@ -141,8 +136,7 @@ impl World {
         event!(Level::DEBUG, "processing actor");
 
         // Run the process sender
-        let cx = cx.with_current(Id { index });
-        actor.process(self, &cx);
+        actor.process(self);
         let stop = actor.is_stop_requested();
 
         // Return the actor

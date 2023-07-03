@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use anyhow::Error;
 
-use crate::{Context, World};
+use crate::{Id, World};
 
 /// Actor processing implementation trait.
 pub trait Actor: Sized + 'static {
@@ -16,49 +16,40 @@ pub trait Actor: Sized + 'static {
     /// inconsistent state.
     ///
     /// You should *always* prefer this over panicking, as this crashes the entire runtime.
-    fn process(
-        &mut self,
-        world: &mut World,
-        cx: &Context,
-        state: &mut State<Self>,
-    ) -> Result<(), Error>;
+    fn process(&mut self, world: &mut World, cx: Context<Self>) -> Result<(), Error>;
 }
 
-/// World state of an actor, such as its pending messages.
-pub struct State<A>
+/// The context of an actor.
+///
+/// Bundles information and state of the actor for processing.
+pub struct Context<'a, A>
 where
     A: Actor,
 {
-    queue: VecDeque<A::Message>,
-    stop_requested: bool,
+    id: Id,
+    queue: &'a mut VecDeque<A::Message>,
+    is_stop_requested: &'a mut bool,
 }
 
-impl<A> Default for State<A>
+impl<'a, A> Context<'a, A>
 where
     A: Actor,
 {
-    fn default() -> Self {
+    pub(crate) fn actor(
+        id: Id,
+        queue: &'a mut VecDeque<A::Message>,
+        is_stop_requested: &'a mut bool,
+    ) -> Self {
         Self {
-            queue: VecDeque::new(),
-            stop_requested: false,
+            id,
+            queue,
+            is_stop_requested,
         }
     }
-}
 
-impl<A> State<A>
-where
-    A: Actor,
-{
-    pub(crate) fn enqueue(&mut self, message: A::Message) {
-        self.queue.push_back(message);
-    }
-
-    pub(crate) fn is_queue_empty(&self) -> bool {
-        self.queue.is_empty()
-    }
-
-    pub(crate) fn is_stop_requested(&self) -> bool {
-        self.stop_requested
+    /// Get the ID of the current actor.
+    pub fn id(&self) -> Id {
+        self.id
     }
 
     /// Get the next queued message, along with the actor ID it's for.
@@ -70,6 +61,6 @@ where
     ///
     /// The stop will be applied at the end of the process step.
     pub fn stop(&mut self) {
-        self.stop_requested = true;
+        *self.is_stop_requested = true;
     }
 }

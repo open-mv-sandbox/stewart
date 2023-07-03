@@ -3,18 +3,15 @@ mod mock;
 use std::sync::atomic::Ordering;
 
 use anyhow::{Context as _, Error};
-use stewart::{Context, Handler, World};
+use stewart::{Handler, World};
 
 pub use mock::{given_fail_actor, given_mock_actor};
 
 use self::mock::ActorInfo;
 
-pub fn given_parent_child(
-    world: &mut World,
-    cx: &Context,
-) -> Result<(ActorInfo, ActorInfo), Error> {
-    let (cx, parent) = given_mock_actor(world, cx)?;
-    let (_, child) = given_mock_actor(world, &cx)?;
+pub fn given_parent_child(world: &mut World) -> Result<(ActorInfo, ActorInfo), Error> {
+    let parent = given_mock_actor(world, None)?;
+    let child = given_mock_actor(world, Some(parent.id))?;
 
     Ok((parent, child))
 }
@@ -22,9 +19,8 @@ pub fn given_parent_child(
 pub fn when_sent_message_to(world: &mut World, sender: Handler<()>) -> Result<(), Error> {
     sender.handle(world, ());
 
-    let cx = Context::default();
     world
-        .run_until_idle(&cx)
+        .run_until_idle()
         .context("failed to process after sending")?;
 
     Ok(())

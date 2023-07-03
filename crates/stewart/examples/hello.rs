@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{Context, Handler, World};
+use stewart::{Handler, World};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -12,10 +12,9 @@ fn main() -> Result<(), Error> {
     utils::init_logging();
 
     let mut world = World::default();
-    let cx = Context::default();
 
     // Start the hello service
-    let service = hello_service::start(&mut world, &cx, "Example".to_string())?;
+    let service = hello_service::start(&mut world, None, "Example".to_string())?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -46,7 +45,7 @@ fn main() -> Result<(), Error> {
     service.handle(&mut world, message);
 
     // Process messages
-    world.run_until_idle(&cx)?;
+    world.run_until_idle()?;
 
     Ok(())
 }
@@ -54,7 +53,7 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{Actor, Context, Handler, State, World};
+    use stewart::{Actor, Context, Handler, Id, World};
     use tracing::{event, instrument, Level};
 
     /// Define your public interfaces as a "protocol", which contains just the types necessary to
@@ -88,13 +87,13 @@ mod hello_service {
     #[instrument("hello::start", skip_all)]
     pub fn start(
         world: &mut World,
-        cx: &Context,
+        parent: Option<Id>,
         name: String,
     ) -> Result<Handler<protocol::Message>, Error> {
         event!(Level::INFO, "starting");
 
         // Create the actor in the world
-        let (_cx, id) = world.create(cx, "hello")?;
+        let id = world.create(parent, "hello")?;
 
         // Start the actor
         let actor = Service { name };
@@ -113,15 +112,10 @@ mod hello_service {
     impl Actor for Service {
         type Message = protocol::Message;
 
-        fn process(
-            &mut self,
-            world: &mut World,
-            _cx: &Context,
-            state: &mut State<Self>,
-        ) -> Result<(), Error> {
+        fn process(&mut self, world: &mut World, mut cx: Context<Self>) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
-            while let Some(message) = state.next() {
+            while let Some(message) = cx.next() {
                 // Process the message
                 match message.action {
                     protocol::Action::Greet(to) => {
@@ -130,7 +124,7 @@ mod hello_service {
                     protocol::Action::Stop { on_result } => {
                         event!(Level::INFO, "stopping service");
 
-                        state.stop();
+                        cx.stop();
                         on_result.handle(world, message.id);
                     }
                 }

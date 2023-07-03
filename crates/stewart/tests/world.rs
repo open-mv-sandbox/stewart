@@ -3,7 +3,7 @@ mod utils;
 use std::sync::atomic::Ordering;
 
 use anyhow::Error;
-use stewart::{Context, World};
+use stewart::World;
 use tracing_test::traced_test;
 
 use crate::utils::{
@@ -15,9 +15,8 @@ use crate::utils::{
 #[traced_test]
 fn send_message_to_actor() -> Result<(), Error> {
     let mut world = World::default();
-    let cx = Context::default();
 
-    let (_, actor) = given_mock_actor(&mut world, &cx)?;
+    let actor = given_mock_actor(&mut world, None)?;
 
     when_sent_message_to(&mut world, actor.sender.clone())?;
     assert_eq!(actor.count.load(Ordering::SeqCst), 1);
@@ -31,13 +30,12 @@ fn send_message_to_actor() -> Result<(), Error> {
 #[traced_test]
 fn stop_actors() -> Result<(), Error> {
     let mut world = World::default();
-    let cx = Context::default();
 
-    let (parent, child) = given_parent_child(&mut world, &cx)?;
+    let (parent, child) = given_parent_child(&mut world)?;
 
     // Stop parent
     parent.sender.handle(&mut world, ());
-    world.run_until_idle(&cx)?;
+    world.run_until_idle()?;
 
     then_actor_dropped(&child);
 
@@ -48,14 +46,13 @@ fn stop_actors() -> Result<(), Error> {
 #[traced_test]
 fn not_started_removed() -> Result<(), Error> {
     let mut world = World::default();
-    let cx = Context::default();
 
-    let (cx, _id) = world.create(&cx, "mock-actor")?;
+    let id = world.create(None, "mock-actor")?;
 
-    let (_, actor) = given_mock_actor(&mut world, &cx)?;
+    let actor = given_mock_actor(&mut world, Some(id))?;
 
     // Process, this should remove the stale actor
-    world.run_until_idle(&cx)?;
+    world.run_until_idle()?;
 
     then_actor_dropped(&actor);
 
@@ -66,9 +63,8 @@ fn not_started_removed() -> Result<(), Error> {
 #[traced_test]
 fn failed_stopped() -> Result<(), Error> {
     let mut world = World::default();
-    let cx = Context::default();
 
-    let (_, actor) = given_fail_actor(&mut world, &cx)?;
+    let actor = given_fail_actor(&mut world, None)?;
 
     when_sent_message_to(&mut world, actor.sender.clone())?;
 

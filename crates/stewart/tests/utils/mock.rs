@@ -4,10 +4,10 @@ use std::{
 };
 
 use anyhow::{bail, Error};
-use stewart::{Actor, Context, Handler, State, World};
+use stewart::{Actor, Context, Handler, Id, World};
 
-pub fn given_mock_actor(world: &mut World, cx: &Context) -> Result<(Context, ActorInfo), Error> {
-    let (cx, id) = world.create(cx, "mock-actor")?;
+pub fn given_mock_actor(world: &mut World, parent: Option<Id>) -> Result<ActorInfo, Error> {
+    let id = world.create(parent, "mock-actor")?;
 
     let instance = MockActor::default();
 
@@ -16,16 +16,17 @@ pub fn given_mock_actor(world: &mut World, cx: &Context) -> Result<(Context, Act
     world.start(id, instance)?;
 
     let info = ActorInfo {
+        id,
         sender: Handler::to(id),
         count,
         dropped,
     };
 
-    Ok((cx, info))
+    Ok(info)
 }
 
-pub fn given_fail_actor(world: &mut World, cx: &Context) -> Result<(Context, ActorInfo), Error> {
-    let (cx, id) = world.create(cx, "fail-actor")?;
+pub fn given_fail_actor(world: &mut World, parent: Option<Id>) -> Result<ActorInfo, Error> {
+    let id = world.create(parent, "fail-actor")?;
 
     let mut instance = MockActor::default();
     instance.fail = true;
@@ -35,15 +36,17 @@ pub fn given_fail_actor(world: &mut World, cx: &Context) -> Result<(Context, Act
     world.start(id, instance)?;
 
     let info = ActorInfo {
+        id,
         sender: Handler::to(id),
         count,
         dropped,
     };
 
-    Ok((cx, info))
+    Ok(info)
 }
 
 pub struct ActorInfo {
+    pub id: Id,
     pub sender: Handler<()>,
     pub count: Rc<AtomicUsize>,
     pub dropped: Rc<AtomicBool>,
@@ -59,22 +62,17 @@ struct MockActor {
 impl Actor for MockActor {
     type Message = ();
 
-    fn process(
-        &mut self,
-        _world: &mut World,
-        _cx: &Context,
-        state: &mut State<Self>,
-    ) -> Result<(), Error> {
+    fn process(&mut self, _world: &mut World, mut cx: Context<Self>) -> Result<(), Error> {
         if self.fail {
             bail!("mock intentional fail");
         }
 
-        while let Some(_) = state.next() {
+        while let Some(_) = cx.next() {
             self.count.fetch_add(1, Ordering::SeqCst);
         }
 
         // Stop after handling just one set of messages
-        state.stop();
+        cx.stop();
 
         Ok(())
     }
