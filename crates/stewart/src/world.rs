@@ -80,6 +80,7 @@ impl World {
     }
 
     /// Send a message to the actor at the ID.
+    #[instrument("World::send", level = "debug", skip_all)]
     pub fn send<M>(&mut self, id: Id, message: M) -> Result<(), SendError>
     where
         M: 'static,
