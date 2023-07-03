@@ -9,8 +9,6 @@ use mio::{event::Source, Events, Interest, Poll, Token};
 use stewart::{Blackboard, Context, Handler, World};
 use tracing::{event, instrument, Level};
 
-use crate::WakeEvent;
-
 // TODO: This entirely needs cleanup, it's way too messy
 
 #[instrument("mio-event-loop", skip_all)]
@@ -98,7 +96,7 @@ impl MioContext {
         }
     }
 
-    pub(crate) fn register<S>(
+    pub fn register<S>(
         &self,
         wake: Handler<WakeEvent>,
         source: &mut S,
@@ -139,4 +137,9 @@ impl MioContext {
 
         Ok(())
     }
+}
+
+pub struct WakeEvent {
+    pub read: bool,
+    pub write: bool,
 }

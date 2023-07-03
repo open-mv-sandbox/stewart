@@ -5,7 +5,7 @@ use mio::{Interest, Token};
 use stewart::{Actor, Context, Handler, State, World};
 use tracing::{event, Level};
 
-use crate::{event_loop::MioContext, WakeEvent};
+use crate::event_loop::{MioContext, WakeEvent};
 
 #[derive(Debug)]
 pub struct Packet {

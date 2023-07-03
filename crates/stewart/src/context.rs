@@ -44,6 +44,9 @@ impl Context {
 }
 
 /// Map of values of types, used for contextual information.
+///
+/// TODO: I changed my mind on Blackboard, instead actors should communicate with contextual
+/// information on addresses, I think, just like you would with other actors.
 #[derive(Default)]
 pub struct Blackboard {
     values: HashMap<TypeId, Box<dyn Any>>,
