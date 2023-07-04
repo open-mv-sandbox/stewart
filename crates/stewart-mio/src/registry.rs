@@ -16,7 +16,7 @@ pub struct Registry {
     // TODO: Remove need for pub(crate) here
     pub(crate) poll: RefCell<Poll>,
     next_token: AtomicUsize,
-    pub(crate) wake_senders: RefCell<HashMap<Token, Handler<WakeEvent>>>,
+    pub(crate) wake_handlers: RefCell<HashMap<Token, Handler<WakeEvent>>>,
 }
 
 impl Registry {
@@ -24,7 +24,7 @@ impl Registry {
         Self {
             poll: RefCell::new(poll),
             next_token: AtomicUsize::new(0),
-            wake_senders: Default::default(),
+            wake_handlers: Default::default(),
         }
     }
 
@@ -42,7 +42,7 @@ impl Registry {
         let token = Token(index);
 
         // Store the waker callback
-        self.wake_senders.borrow_mut().insert(token, wake);
+        self.wake_handlers.borrow_mut().insert(token, wake);
 
         // Register with the generated token
         self.poll

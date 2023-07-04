@@ -6,7 +6,7 @@ use std::{
 use anyhow::{bail, Error};
 use stewart::{Actor, Context, Handler, Id, World};
 
-pub fn given_mock_actor(world: &mut World, parent: Option<Id>) -> Result<ActorInfo, Error> {
+pub fn given_mock_actor(world: &mut World, parent: Id) -> Result<ActorInfo, Error> {
     let id = world.create(parent, "mock-actor")?;
 
     let instance = MockActor::default();
@@ -17,7 +17,7 @@ pub fn given_mock_actor(world: &mut World, parent: Option<Id>) -> Result<ActorIn
 
     let info = ActorInfo {
         id,
-        sender: Handler::to(id),
+        handler: Handler::to(id),
         count,
         dropped,
     };
@@ -25,7 +25,7 @@ pub fn given_mock_actor(world: &mut World, parent: Option<Id>) -> Result<ActorIn
     Ok(info)
 }
 
-pub fn given_fail_actor(world: &mut World, parent: Option<Id>) -> Result<ActorInfo, Error> {
+pub fn given_fail_actor(world: &mut World, parent: Id) -> Result<ActorInfo, Error> {
     let id = world.create(parent, "fail-actor")?;
 
     let mut instance = MockActor::default();
@@ -37,7 +37,7 @@ pub fn given_fail_actor(world: &mut World, parent: Option<Id>) -> Result<ActorIn
 
     let info = ActorInfo {
         id,
-        sender: Handler::to(id),
+        handler: Handler::to(id),
         count,
         dropped,
     };
@@ -47,7 +47,7 @@ pub fn given_fail_actor(world: &mut World, parent: Option<Id>) -> Result<ActorIn
 
 pub struct ActorInfo {
     pub id: Id,
-    pub sender: Handler<()>,
+    pub handler: Handler<()>,
     pub count: Rc<AtomicUsize>,
     pub dropped: Rc<AtomicBool>,
 }

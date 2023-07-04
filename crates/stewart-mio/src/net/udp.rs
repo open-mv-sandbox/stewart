@@ -14,13 +14,13 @@ pub struct Packet {
 }
 
 pub struct SocketInfo {
-    sender: Handler<Packet>,
+    handler: Handler<Packet>,
     local_addr: SocketAddr,
 }
 
 impl SocketInfo {
-    pub fn sender(&self) -> &Handler<Packet> {
-        &self.sender
+    pub fn handler(&self) -> &Handler<Packet> {
+        &self.handler
     }
 
     pub fn local_addr(&self) -> SocketAddr {
@@ -30,7 +30,7 @@ impl SocketInfo {
 
 pub fn bind(
     world: &mut World,
-    parent: Option<Id>,
+    parent: Id,
     registry: Rc<Registry>,
     addr: SocketAddr,
     on_packet: Handler<Packet>,
@@ -60,7 +60,7 @@ pub fn bind(
     world.start(id, actor)?;
 
     let info = SocketInfo {
-        sender: Handler::to(id).map(ImplMessage::Send),
+        handler: Handler::to(id).map(ImplMessage::Send),
         local_addr,
     };
     Ok(info)

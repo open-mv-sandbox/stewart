@@ -25,12 +25,13 @@ pub use self::{
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum StartError {
-    /// The actor has already been started.
-    #[error("actor already started")]
-    ActorAlreadyStarted,
-    /// The actor couldn't be found.
-    #[error("actor not found")]
-    ActorNotFound,
+    /// Invalid actor ID, this can be one of:
+    ///
+    /// - The actor has already been started.
+    /// - The actor cannot be found.
+    /// - The ID you have given isn't associated with an actor.
+    #[error("invalid actor id")]
+    InvalidId,
     /// Internal error.
     #[error("internal error")]
     InternalError(#[from] InternalError),
@@ -40,15 +41,16 @@ pub enum StartError {
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum SendError {
-    /// The actor couldn't be found.
-    #[error("actor not found")]
-    ActorNotFound,
-    /// The actor isn't available.
-    #[error("actor not available")]
-    ActorNotAvailable,
-    /// The actor cannot accept a message of the given type.
-    #[error("incorrect message type")]
-    IncorrectMessageType,
+    /// Invalid actor ID, this can be one of:
+    ///
+    /// - The actor cannot be found.
+    /// - The ID you have given isn't associated with an actor.
+    /// - The found actor doesn't accept messages of this type.
+    #[error("invalid actor id")]
+    InvalidId,
+    /// Actor is currently processing, you cannot send a message to a processing actor.
+    #[error("can't send to processing actor")]
+    Processing,
     /// Internal error.
     #[error("internal error")]
     InternalError(#[from] InternalError),

@@ -3,7 +3,7 @@ mod utils;
 use std::rc::Rc;
 
 use anyhow::Error;
-use stewart::{Actor, Context, Handler, World};
+use stewart::{Actor, Context, Handler, Id, World};
 use stewart_mio::{
     net::udp::{self, Packet},
     Registry,
@@ -19,32 +19,32 @@ fn main() -> Result<(), Error> {
 }
 
 fn init(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
-    let id = world.create(None, "echo-example")?;
-    let sender = Handler::to(id);
+    let id = world.create(Id::none(), "echo-example")?;
+    let handler = Handler::to(id);
 
     // Start the listen port
     let info = udp::bind(
         world,
-        Some(id),
+        id,
         registry.clone(),
         "0.0.0.0:1234".parse()?,
-        sender.clone().map(Message::Server),
+        handler.clone().map(Message::Server),
     )?;
     event!(Level::INFO, addr = ?info.local_addr(), "listening");
     let server_addr = info.local_addr();
-    let server_sender = info.sender().clone();
+    let server_handler = info.handler().clone();
 
     // Start the client port
     let info = udp::bind(
         world,
-        Some(id),
+        id,
         registry.clone(),
         "0.0.0.0:0".parse()?,
-        sender.map(Message::Client),
+        handler.map(Message::Client),
     )?;
     event!(Level::INFO, addr = ?info.local_addr(), "sending");
 
-    let actor = EchoExample { server_sender };
+    let actor = EchoExample { server_handler };
     world.start(id, actor)?;
 
     // Send a message to be echo'd
@@ -52,19 +52,19 @@ fn init(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
         peer: server_addr,
         data: b"Client Packet".to_vec(),
     };
-    info.sender().handle(world, packet);
+    info.handler().handle(world, packet);
 
     let packet = Packet {
         peer: server_addr,
         data: b"Another Packet of Data That's A Bit Longer".to_vec(),
     };
-    info.sender().handle(world, packet);
+    info.handler().handle(world, packet);
 
     Ok(())
 }
 
 struct EchoExample {
-    server_sender: Handler<Packet>,
+    server_handler: Handler<Packet>,
 }
 
 impl Actor for EchoExample {
@@ -79,7 +79,7 @@ impl Actor for EchoExample {
 
                     // Echo back with a hello message
                     packet.data = format!("Hello, \"{}\"!", message).into_bytes();
-                    self.server_sender.handle(world, packet);
+                    self.server_handler.handle(world, packet);
                 }
                 Message::Client(packet) => {
                     let message = std::str::from_utf8(&packet.data)?;

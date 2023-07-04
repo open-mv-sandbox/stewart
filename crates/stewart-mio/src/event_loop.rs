@@ -48,12 +48,12 @@ fn run_poll_loop(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error
             event!(Level::TRACE, "sending wake event");
 
             // Route event to correct destination
-            let wake_senders = registry.wake_senders.borrow();
-            let sender = wake_senders
+            let wake_handlers = registry.wake_handlers.borrow();
+            let handler = wake_handlers
                 .get(&event.token())
-                .context("failed to get wake sender")?;
+                .context("failed to get wake handler")?;
 
-            sender.handle(
+            handler.handle(
                 world,
                 WakeEvent {
                     read: event.is_readable(),

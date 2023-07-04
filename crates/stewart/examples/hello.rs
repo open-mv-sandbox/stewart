@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{Handler, World};
+use stewart::{Handler, Id, World};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -14,7 +14,7 @@ fn main() -> Result<(), Error> {
     let mut world = World::default();
 
     // Start the hello service
-    let service = hello_service::start(&mut world, None, "Example".to_string())?;
+    let service = hello_service::start(&mut world, Id::none(), "Example".to_string())?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -76,7 +76,7 @@ mod hello_service {
         pub enum Action {
             Greet(String),
             Stop {
-                /// As part of your protocol, you can include senders to respond.
+                /// As part of your protocol, you can include handlers to respond.
                 /// Of course when bridging between worlds and across the network, these can't be
                 /// directly serialized, but they can be stored by 'envoy' actors.
                 on_result: Handler<Uuid>,
@@ -88,7 +88,7 @@ mod hello_service {
     #[instrument("hello::start", skip_all)]
     pub fn start(
         world: &mut World,
-        parent: Option<Id>,
+        parent: Id,
         name: String,
     ) -> Result<Handler<protocol::Message>, Error> {
         event!(Level::INFO, "starting");

@@ -41,8 +41,7 @@ where
 {
     fn enqueue(&mut self, slot: &mut dyn Any) -> Result<(), SendError> {
         // Take the message out
-        let slot: &mut Option<A::Message> =
-            slot.downcast_mut().ok_or(SendError::IncorrectMessageType)?;
+        let slot: &mut Option<A::Message> = slot.downcast_mut().ok_or(SendError::InvalidId)?;
         let message = slot
             .take()
             .context("message not in slot")

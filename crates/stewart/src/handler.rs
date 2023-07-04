@@ -21,19 +21,19 @@ impl<M> Handler<M>
 where
     M: 'static,
 {
-    /// Create a no-op sender, that does nothing.
+    /// Create a no-op handler, that does nothing.
     pub fn noop() -> Self {
         Self { apply: Apply::Noop }
     }
 
-    /// Create a sender to a specific actor.
+    /// Create a handler to a specific actor.
     pub fn to(id: Id) -> Self {
         Self {
             apply: Apply::To(id),
         }
     }
 
-    /// Create a new mapping sender, wrapping the original sender.
+    /// Create a new mapping handler, wrapping the original handler.
     pub fn map<F, I>(self, callback: F) -> Handler<I>
     where
         F: Fn(I) -> M + 'static,

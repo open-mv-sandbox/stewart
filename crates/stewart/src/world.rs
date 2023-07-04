@@ -22,12 +22,12 @@ impl World {
     ///
     /// The given `name` will be used in logging.
     #[instrument("World::create", level = "debug", skip_all)]
-    pub fn create(&mut self, parent: Option<Id>, name: &'static str) -> Result<Id, InternalError> {
+    pub fn create(&mut self, parent: Id, name: &'static str) -> Result<Id, InternalError> {
         event!(Level::DEBUG, name, "creating actor");
 
         let node = Node {
             name,
-            parent: parent.map(|v| v.index),
+            parent: parent.index,
             entry: None,
         };
         let index = self.tree.insert(node)?;
@@ -35,7 +35,7 @@ impl World {
         // Track that the actor has to be started
         self.pending_start.push(index);
 
-        let id = Id { index };
+        let id = Id { index: Some(index) };
         Ok(id)
     }
 
@@ -48,15 +48,13 @@ impl World {
         event!(Level::DEBUG, "starting actor");
 
         // Find the node for the actor
-        let node = self
-            .tree
-            .get_mut(id.index)
-            .ok_or(StartError::ActorNotFound)?;
+        let index = id.index.ok_or(StartError::InvalidId)?;
+        let node = self.tree.get_mut(index).ok_or(StartError::InvalidId)?;
 
         // Validate if it's not started yet
-        let maybe_index = self.pending_start.iter().position(|v| *v == id.index);
+        let maybe_index = self.pending_start.iter().position(|v| *v == index);
         let Some(pending_index) = maybe_index else {
-            return Err(StartError::ActorAlreadyStarted);
+            return Err(StartError::InvalidId);
         };
 
         // Give the actor to the node
@@ -86,18 +84,16 @@ impl World {
         M: 'static,
     {
         // Get the actor in tree
-        let node = self
-            .tree
-            .get_mut(id.index)
-            .ok_or(SendError::ActorNotFound)?;
+        let index = id.index.ok_or(SendError::InvalidId)?;
+        let node = self.tree.get_mut(index).ok_or(SendError::InvalidId)?;
 
         // Hand the message to the actor
-        let entry = node.entry.as_mut().ok_or(SendError::ActorNotAvailable)?;
+        let entry = node.entry.as_mut().ok_or(SendError::Processing)?;
         let mut message = Some(message);
         entry.enqueue(&mut message)?;
 
         // Queue for processing
-        self.schedule.queue_process(id.index);
+        self.schedule.queue_process(index);
 
         Ok(())
     }
@@ -123,9 +119,9 @@ impl World {
 
         let span = span!(Level::INFO, "actor", name = node.name);
         let _entered = span.enter();
-        event!(Level::DEBUG, "processing actor");
 
-        // Run the process sender
+        // Process the actor
+        event!(Level::DEBUG, "processing actor");
         let stop = actor.process(self);
 
         // Return the actor
@@ -170,5 +166,12 @@ impl Drop for World {
 /// ID of an actor slot in a `World`.
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Id {
-    index: Index,
+    index: Option<Index>,
+}
+
+impl Id {
+    /// Create a new `Id` not associated with any actor, usually representing 'root'.
+    pub fn none() -> Self {
+        Id { index: None }
+    }
 }
