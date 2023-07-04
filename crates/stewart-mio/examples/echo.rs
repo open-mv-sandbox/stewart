@@ -52,13 +52,13 @@ fn init(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
         peer: server_addr,
         data: b"Client Packet".to_vec(),
     };
-    info.handler().handle(world, packet);
+    info.handler().handle(world, packet)?;
 
     let packet = Packet {
         peer: server_addr,
         data: b"Somewhat Longer Packet".to_vec(),
     };
-    info.handler().handle(world, packet);
+    info.handler().handle(world, packet)?;
 
     Ok(())
 }
@@ -84,7 +84,7 @@ impl Actor for EchoExample {
 
                     // Echo back with a hello message
                     packet.data = format!("Hello, \"{}\"!", data).into_bytes();
-                    self.server_handler.handle(world, packet);
+                    self.server_handler.handle(world, packet)?;
                 }
                 Message::Client(packet) => {
                     let data = std::str::from_utf8(&packet.data)?;

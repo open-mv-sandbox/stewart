@@ -38,7 +38,7 @@ impl Registry {
         world: &mut World,
         token: Token,
         readable: bool,
-        writeable: bool,
+        writable: bool,
     ) -> Result<(), Error> {
         event!(Level::TRACE, "sending wake");
 
@@ -49,13 +49,7 @@ impl Registry {
             .context("failed to get wake handler")?;
 
         // Send out the message
-        handler.handle(
-            world,
-            WakeEvent {
-                readable,
-                writeable,
-            },
-        );
+        handler.handle(world, WakeEvent { readable, writable })?;
 
         Ok(())
     }
@@ -115,5 +109,5 @@ impl Registry {
 
 pub struct WakeEvent {
     pub readable: bool,
-    pub writeable: bool,
+    pub writable: bool,
 }

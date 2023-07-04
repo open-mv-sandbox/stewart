@@ -3,7 +3,7 @@ use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr, rc::Rc};
 use anyhow::Error;
 use mio::{Interest, Token};
 use stewart::{Actor, Context, Handler, Id, World};
-use tracing::{event, Level};
+use tracing::{event, instrument, Level};
 
 use crate::{registry::WakeEvent, Registry};
 
@@ -28,6 +28,7 @@ impl SocketInfo {
     }
 }
 
+#[instrument("udp::bind", skip_all)]
 pub fn bind(
     world: &mut World,
     parent: Id,
@@ -84,7 +85,8 @@ impl Actor for UdpSocket {
     type Message = Message;
 
     fn process(&mut self, world: &mut World, mut cx: Context<Self>) -> Result<(), Error> {
-        let mut wake = None;
+        let mut readable = false;
+        let mut writable = false;
 
         while let Some(message) = cx.next() {
             match message {
@@ -105,19 +107,17 @@ impl Actor for UdpSocket {
                     }
                 }
                 Message::Wake(event) => {
-                    // Intentionally skips duplicates, a newer wake overwrites older ones
-                    wake = Some(event);
+                    readable |= event.readable;
+                    writable |= event.writable;
                 }
             }
         }
 
-        if let Some(wake) = wake {
-            if wake.readable {
-                self.poll_read(world)?
-            }
-            if wake.writeable {
-                self.poll_write()?
-            }
+        if readable {
+            self.poll_read(world)?
+        }
+        if writable {
+            self.poll_write()?
         }
 
         Ok(())
@@ -155,7 +155,7 @@ impl UdpSocket {
         // Send the packet to the listener
         let data = self.buffer[..size].to_vec();
         let packet = Packet { peer, data };
-        self.on_packet.handle(world, packet);
+        self.on_packet.handle(world, packet)?;
 
         Ok(true)
     }

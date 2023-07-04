@@ -1,4 +1,4 @@
-use anyhow::{Context as _, Error};
+use anyhow::{anyhow, Context as _, Error};
 use thunderdome::Index;
 use tracing::{event, instrument, span, Level};
 
@@ -6,7 +6,7 @@ use crate::{
     any::ActorEntry,
     schedule::Schedule,
     tree::{Node, Tree},
-    Actor, InternalError, SendError, StartError,
+    Actor, CreateError, ProcessError, SendError, StartError,
 };
 
 /// Thread-local actor tracking and execution system.
@@ -22,7 +22,7 @@ impl World {
     ///
     /// The given `name` will be used in logging.
     #[instrument("World::create", level = "debug", skip_all)]
-    pub fn create(&mut self, parent: Id, name: &'static str) -> Result<Id, InternalError> {
+    pub fn create(&mut self, parent: Id, name: &'static str) -> Result<Id, CreateError> {
         event!(Level::DEBUG, name, "creating actor");
 
         let node = Node {
@@ -48,13 +48,13 @@ impl World {
         event!(Level::DEBUG, "starting actor");
 
         // Find the node for the actor
-        let index = id.index.ok_or(StartError::InvalidId)?;
-        let node = self.tree.get_mut(index).ok_or(StartError::InvalidId)?;
+        let index = id.index.context("id can't be none")?;
+        let node = self.tree.get_mut(index).context("can't find actor")?;
 
         // Validate if it's not started yet
         let maybe_index = self.pending_start.iter().position(|v| *v == index);
         let Some(pending_index) = maybe_index else {
-            return Err(StartError::InvalidId);
+            return Err(anyhow!("actor already started").into());
         };
 
         // Give the actor to the node
@@ -84,11 +84,14 @@ impl World {
         M: 'static,
     {
         // Get the actor in tree
-        let index = id.index.ok_or(SendError::InvalidId)?;
-        let node = self.tree.get_mut(index).ok_or(SendError::InvalidId)?;
+        let index = id.index.context("id can't be none")?;
+        let node = self.tree.get_mut(index).context("can't find actor")?;
 
         // Hand the message to the actor
-        let entry = node.entry.as_mut().ok_or(SendError::Processing)?;
+        let entry = node
+            .entry
+            .as_mut()
+            .context("can't send to processing or starting")?;
         let mut message = Some(message);
         entry.enqueue(&mut message)?;
 
@@ -100,7 +103,7 @@ impl World {
 
     /// Process all pending messages, until none are left.
     #[instrument("World::run_until_idle", level = "debug", skip_all)]
-    pub fn run_until_idle(&mut self) -> Result<(), InternalError> {
+    pub fn run_until_idle(&mut self) -> Result<(), ProcessError> {
         self.timeout_starting()?;
 
         while let Some(index) = self.schedule.next() {

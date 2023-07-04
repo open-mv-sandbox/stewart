@@ -17,7 +17,7 @@ pub fn given_parent_child(world: &mut World) -> Result<(ActorInfo, ActorInfo), E
 }
 
 pub fn when_sent_message_to(world: &mut World, handler: Handler<()>) -> Result<(), Error> {
-    handler.handle(world, ());
+    handler.handle(world, ())?;
 
     world
         .run_until_idle()

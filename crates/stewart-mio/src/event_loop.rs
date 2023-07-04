@@ -33,7 +33,7 @@ where
 }
 
 fn run_poll_loop(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
-    let mut events = Events::with_capacity(128);
+    let mut events = Events::with_capacity(256);
 
     loop {
         // Wait for pending events

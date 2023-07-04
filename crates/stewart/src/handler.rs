@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
-use tracing::{event, instrument, Level};
+use tracing::instrument;
 
-use crate::{Id, World};
+use crate::{Id, SendError, World};
 
 /// Typed encapsulated callback handler.
 ///
@@ -14,7 +14,7 @@ pub struct Handler<M> {
 enum Kind<M> {
     None,
     To(Id),
-    Map(Rc<dyn Fn(&mut World, M)>),
+    Map(Rc<dyn Fn(&mut World, M) -> Result<(), SendError>>),
 }
 
 impl<M> Handler<M>
@@ -51,15 +51,10 @@ where
 
     /// Apply the handler, potentially sending a message to a receiving actor.
     #[instrument("Handler::handle", level = "debug", skip_all)]
-    pub fn handle(&self, world: &mut World, message: M) {
+    pub fn handle(&self, world: &mut World, message: M) -> Result<(), SendError> {
         match &self.apply {
-            Kind::None => {}
-            Kind::To(id) => {
-                let result = world.send(*id, message);
-                if let Err(error) = result {
-                    event!(Level::ERROR, ?error, "failed to send message");
-                }
-            }
+            Kind::None => Ok(()),
+            Kind::To(id) => world.send(*id, message),
             Kind::Map(callback) => callback(world, message),
         }
     }

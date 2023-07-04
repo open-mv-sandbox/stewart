@@ -24,14 +24,14 @@ fn main() -> Result<(), Error> {
         id: Uuid::new_v4(),
         action,
     };
-    service.handle(&mut world, message);
+    service.handle(&mut world, message)?;
 
     let action = hello::Action::Greet("Actors".to_string());
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
     };
-    service.handle(&mut world, message);
+    service.handle(&mut world, message)?;
 
     // Stop the actor, automatically cleaning up associated resources
     let action = hello::Action::Stop {
@@ -42,7 +42,7 @@ fn main() -> Result<(), Error> {
         id: Uuid::new_v4(),
         action,
     };
-    service.handle(&mut world, message);
+    service.handle(&mut world, message)?;
 
     // Process messages
     world.run_until_idle()?;
@@ -137,7 +137,7 @@ mod hello_service {
                         event!(Level::INFO, "stopping service");
 
                         cx.stop();
-                        on_result.handle(world, request.id);
+                        on_result.handle(world, request.id)?;
                     }
                 }
             }

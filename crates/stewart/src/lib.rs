@@ -21,42 +21,34 @@ pub use self::{
     world::{Id, World},
 };
 
-/// Error on actor starting.
+/// Error while creating actor.
 #[derive(Error, Debug)]
-#[non_exhaustive]
-pub enum StartError {
-    /// Invalid actor ID, this can be one of:
-    ///
-    /// - The actor has already been started.
-    /// - The actor cannot be found.
-    /// - The ID you have given isn't associated with an actor.
-    #[error("invalid actor id")]
-    InvalidId,
-    /// Internal error.
-    #[error("internal error")]
-    InternalError(#[from] InternalError),
+#[error("creating actor failed")]
+pub struct CreateError {
+    #[from]
+    source: Error,
 }
 
-/// Error on sending.
+/// Error while starting actor.
 #[derive(Error, Debug)]
-#[non_exhaustive]
-pub enum SendError {
-    /// Invalid actor ID, this can be one of:
-    ///
-    /// - The actor cannot be found.
-    /// - The ID you have given isn't associated with an actor.
-    /// - The found actor doesn't accept messages of this type.
-    #[error("invalid actor id")]
-    InvalidId,
-    /// Actor is currently processing, you cannot send a message to a processing actor.
-    #[error("can't send to processing actor")]
-    Processing,
-    /// Internal error.
-    #[error("internal error")]
-    InternalError(#[from] InternalError),
+#[error("starting actor failed")]
+pub struct StartError {
+    #[from]
+    source: Error,
 }
 
-/// Internal error, this is always a bug.
+/// Error while sending message.
 #[derive(Error, Debug)]
-#[error("internal error, this is a bug")]
-pub struct InternalError(#[from] Error);
+#[error("sending message failed")]
+pub struct SendError {
+    #[from]
+    source: Error,
+}
+
+/// Error while sending message.
+#[derive(Error, Debug)]
+#[error("process world failed")]
+pub struct ProcessError {
+    #[from]
+    source: Error,
+}

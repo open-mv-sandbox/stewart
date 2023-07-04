@@ -34,7 +34,7 @@ fn stop_actors() -> Result<(), Error> {
     let (parent, child) = given_parent_child(&mut world)?;
 
     // Stop parent
-    parent.handler.handle(&mut world, ());
+    parent.handler.handle(&mut world, ())?;
     world.run_until_idle()?;
 
     then_actor_dropped(&child);
