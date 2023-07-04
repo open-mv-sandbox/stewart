@@ -36,7 +36,7 @@ fn main() -> Result<(), Error> {
     // Stop the actor, automatically cleaning up associated resources
     let action = hello::Action::Stop {
         // You don't necessarily need to actually do anything with a callback.
-        on_result: Handler::noop(),
+        on_result: Handler::none(),
     };
     let message = hello::Message {
         id: Uuid::new_v4(),

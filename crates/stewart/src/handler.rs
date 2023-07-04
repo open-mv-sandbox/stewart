@@ -8,11 +8,11 @@ use crate::{Id, World};
 ///
 /// May send a message to one or more actors, after potentially transforming it.
 pub struct Handler<M> {
-    apply: Apply<M>,
+    apply: Kind<M>,
 }
 
-enum Apply<M> {
-    Noop,
+enum Kind<M> {
+    None,
     To(Id),
     Map(Rc<dyn Fn(&mut World, M)>),
 }
@@ -21,15 +21,15 @@ impl<M> Handler<M>
 where
     M: 'static,
 {
-    /// Create a no-op handler, that does nothing.
-    pub fn noop() -> Self {
-        Self { apply: Apply::Noop }
+    /// Create a 'none' handler, that does nothing.
+    pub fn none() -> Self {
+        Self { apply: Kind::None }
     }
 
     /// Create a handler to a specific actor.
     pub fn to(id: Id) -> Self {
         Self {
-            apply: Apply::To(id),
+            apply: Kind::To(id),
         }
     }
 
@@ -45,7 +45,7 @@ where
         let callback = Rc::new(callback);
 
         Handler {
-            apply: Apply::Map(callback),
+            apply: Kind::Map(callback),
         }
     }
 
@@ -53,14 +53,14 @@ where
     #[instrument("Handler::handle", level = "debug", skip_all)]
     pub fn handle(&self, world: &mut World, message: M) {
         match &self.apply {
-            Apply::Noop => {}
-            Apply::To(id) => {
+            Kind::None => {}
+            Kind::To(id) => {
                 let result = world.send(*id, message);
                 if let Err(error) = result {
                     event!(Level::ERROR, ?error, "failed to send message");
                 }
             }
-            Apply::Map(callback) => callback(world, message),
+            Kind::Map(callback) => callback(world, message),
         }
     }
 }
@@ -68,9 +68,9 @@ where
 impl<M> Clone for Handler<M> {
     fn clone(&self) -> Self {
         let apply = match &self.apply {
-            Apply::Noop => Apply::Noop,
-            Apply::To(index) => Apply::To(*index),
-            Apply::Map(callback) => Apply::Map(callback.clone()),
+            Kind::None => Kind::None,
+            Kind::To(index) => Kind::To(*index),
+            Kind::Map(callback) => Kind::Map(callback.clone()),
         };
 
         Self { apply }
