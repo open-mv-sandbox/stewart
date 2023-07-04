@@ -4,19 +4,19 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use anyhow::Error;
-use mio::{event::Source, Interest, Poll, Token};
-use stewart::Handler;
+use anyhow::{Context as _, Error};
+use mio::{event::Source, Events, Interest, Poll, Token};
+use stewart::{Handler, World};
+use tracing::{event, Level};
 
 /// Shared mio context registry.
 ///
 /// Actors can use an instance of this registry to register wake events.
 /// The registry is created by the event loop.
 pub struct Registry {
-    // TODO: Remove need for pub(crate) here
-    pub(crate) poll: RefCell<Poll>,
+    poll: RefCell<Poll>,
     next_token: AtomicUsize,
-    pub(crate) wake_handlers: RefCell<HashMap<Token, Handler<WakeEvent>>>,
+    wake_handlers: RefCell<HashMap<Token, Handler<WakeEvent>>>,
 }
 
 impl Registry {
@@ -28,19 +28,54 @@ impl Registry {
         }
     }
 
-    pub(crate) fn register<S>(
+    pub(crate) fn poll(&self, events: &mut Events) -> Result<(), Error> {
+        self.poll.borrow_mut().poll(events, None)?;
+        Ok(())
+    }
+
+    pub(crate) fn wake(
         &self,
-        wake: Handler<WakeEvent>,
+        world: &mut World,
+        token: Token,
+        readable: bool,
+        writeable: bool,
+    ) -> Result<(), Error> {
+        event!(Level::TRACE, "sending wake");
+
+        // Get the wake handler for this token
+        let wake_handlers = self.wake_handlers.borrow();
+        let handler = wake_handlers
+            .get(&token)
+            .context("failed to get wake handler")?;
+
+        // Send out the message
+        handler.handle(
+            world,
+            WakeEvent {
+                readable,
+                writeable,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Create a new unique token for this registry.
+    pub fn token(&self) -> Token {
+        let index = self.next_token.fetch_add(1, Ordering::SeqCst);
+        Token(index)
+    }
+
+    pub fn register<S>(
+        &self,
         source: &mut S,
+        token: Token,
         interest: Interest,
-    ) -> Result<Token, Error>
+        wake: Handler<WakeEvent>,
+    ) -> Result<(), Error>
     where
         S: Source,
     {
-        // Get the next poll token
-        let index = self.next_token.fetch_add(1, Ordering::SeqCst);
-        let token = Token(index);
-
         // Store the waker callback
         self.wake_handlers.borrow_mut().insert(token, wake);
 
@@ -50,10 +85,10 @@ impl Registry {
             .registry()
             .register(source, token, interest)?;
 
-        Ok(token)
+        Ok(())
     }
 
-    pub(crate) fn reregister<S>(
+    pub fn reregister<S>(
         &self,
         source: &mut S,
         token: Token,
@@ -66,12 +101,19 @@ impl Registry {
             .borrow()
             .registry()
             .reregister(source, token, interest)?;
+        Ok(())
+    }
 
+    pub fn deregister<S>(&self, source: &mut S) -> Result<(), Error>
+    where
+        S: Source,
+    {
+        self.poll.borrow().registry().deregister(source)?;
         Ok(())
     }
 }
 
 pub struct WakeEvent {
-    pub read: bool,
-    pub write: bool,
+    pub readable: bool,
+    pub writeable: bool,
 }

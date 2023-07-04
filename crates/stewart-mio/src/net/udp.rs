@@ -42,10 +42,9 @@ pub fn bind(
     let local_addr = socket.local_addr()?;
 
     // Register the socket
+    let token = registry.token();
     let wake = Handler::to(id).map(Message::Wake);
-    let token = registry.register(wake, &mut socket, Interest::READABLE)?;
-
-    // TODO: Registry cleanup when the socket is stopped
+    registry.register(&mut socket, token, Interest::READABLE, wake)?;
 
     let actor = UdpSocket {
         registry,
@@ -53,7 +52,7 @@ pub fn bind(
         token,
 
         // Max size of a UDP packet
-        buffer: vec![0; 1 << 16],
+        buffer: vec![0; 65536],
         on_packet,
         queue: VecDeque::new(),
     };
@@ -74,6 +73,11 @@ struct UdpSocket {
     buffer: Vec<u8>,
     queue: VecDeque<Packet>,
     on_packet: Handler<Packet>,
+}
+
+enum Message {
+    Send(Packet),
+    Wake(WakeEvent),
 }
 
 impl Actor for UdpSocket {
@@ -108,10 +112,10 @@ impl Actor for UdpSocket {
         }
 
         if let Some(wake) = wake {
-            if wake.read {
+            if wake.readable {
                 self.poll_read(world)?
             }
-            if wake.write {
+            if wake.writeable {
                 self.poll_write()?
             }
         }
@@ -195,7 +199,12 @@ impl UdpSocket {
     }
 }
 
-enum Message {
-    Send(Packet),
-    Wake(WakeEvent),
+impl Drop for UdpSocket {
+    fn drop(&mut self) {
+        // Cleanup the current socket from the registry
+        let result = self.registry.deregister(&mut self.socket);
+        if let Err(error) = result {
+            event!(Level::ERROR, ?error, "failed to deregister");
+        }
+    }
 }

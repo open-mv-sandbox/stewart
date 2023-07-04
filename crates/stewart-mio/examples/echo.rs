@@ -56,7 +56,7 @@ fn init(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
 
     let packet = Packet {
         peer: server_addr,
-        data: b"Another Packet of Data That's A Bit Longer".to_vec(),
+        data: b"Somewhat Longer Packet".to_vec(),
     };
     info.handler().handle(world, packet);
 
@@ -67,6 +67,11 @@ struct EchoExample {
     server_handler: Handler<Packet>,
 }
 
+enum Message {
+    Server(Packet),
+    Client(Packet),
+}
+
 impl Actor for EchoExample {
     type Message = Message;
 
@@ -74,25 +79,20 @@ impl Actor for EchoExample {
         while let Some(message) = cx.next() {
             match message {
                 Message::Server(mut packet) => {
-                    let message = std::str::from_utf8(&packet.data)?;
-                    event!(Level::INFO, data = message, "server received packet");
+                    let data = std::str::from_utf8(&packet.data)?;
+                    event!(Level::INFO, data, "server received packet");
 
                     // Echo back with a hello message
-                    packet.data = format!("Hello, \"{}\"!", message).into_bytes();
+                    packet.data = format!("Hello, \"{}\"!", data).into_bytes();
                     self.server_handler.handle(world, packet);
                 }
                 Message::Client(packet) => {
-                    let message = std::str::from_utf8(&packet.data)?;
-                    event!(Level::INFO, data = message, "client received packet");
+                    let data = std::str::from_utf8(&packet.data)?;
+                    event!(Level::INFO, data, "client received packet");
                 }
             }
         }
 
         Ok(())
     }
-}
-
-enum Message {
-    Server(Packet),
-    Client(Packet),
 }
