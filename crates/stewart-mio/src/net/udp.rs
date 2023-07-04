@@ -42,7 +42,7 @@ pub fn bind(
     let local_addr = socket.local_addr()?;
 
     // Register the socket
-    let wake = Handler::to(id).map(ImplMessage::Wake);
+    let wake = Handler::to(id).map(Message::Wake);
     let token = registry.register(wake, &mut socket, Interest::READABLE)?;
 
     // TODO: Registry cleanup when the socket is stopped
@@ -60,7 +60,7 @@ pub fn bind(
     world.start(id, actor)?;
 
     let info = SocketInfo {
-        handler: Handler::to(id).map(ImplMessage::Send),
+        handler: Handler::to(id).map(Message::Send),
         local_addr,
     };
     Ok(info)
@@ -77,14 +77,14 @@ struct UdpSocket {
 }
 
 impl Actor for UdpSocket {
-    type Message = ImplMessage;
+    type Message = Message;
 
     fn process(&mut self, world: &mut World, mut cx: Context<Self>) -> Result<(), Error> {
         let mut wake = None;
 
         while let Some(message) = cx.next() {
             match message {
-                ImplMessage::Send(packet) => {
+                Message::Send(packet) => {
                     event!(Level::DEBUG, peer = ?packet.peer, "received outgoing packet");
 
                     // Queue outgoing packet
@@ -100,7 +100,7 @@ impl Actor for UdpSocket {
                         )?;
                     }
                 }
-                ImplMessage::Wake(event) => {
+                Message::Wake(event) => {
                     // Intentionally skips duplicates, a newer wake overwrites older ones
                     wake = Some(event);
                 }
@@ -195,7 +195,7 @@ impl UdpSocket {
     }
 }
 
-enum ImplMessage {
+enum Message {
     Send(Packet),
     Wake(WakeEvent),
 }

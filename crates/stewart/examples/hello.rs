@@ -20,14 +20,14 @@ fn main() -> Result<(), Error> {
     event!(Level::INFO, "sending messages");
 
     let action = hello::Action::Greet("World".to_string());
-    let message = hello::Message {
+    let message = hello::Request {
         id: Uuid::new_v4(),
         action,
     };
     service.handle(&mut world, message);
 
     let action = hello::Action::Greet("Actors".to_string());
-    let message = hello::Message {
+    let message = hello::Request {
         id: Uuid::new_v4(),
         action,
     };
@@ -38,7 +38,7 @@ fn main() -> Result<(), Error> {
         // You don't necessarily need to actually do anything with a callback.
         on_result: Handler::none(),
     };
-    let message = hello::Message {
+    let message = hello::Request {
         id: Uuid::new_v4(),
         action,
     };
@@ -63,9 +63,9 @@ mod hello_service {
         use stewart::Handler;
         use uuid::Uuid;
 
-        /// It's good practice to wrap your service's actions in a `Message` type, for adding
+        /// It's good practice to wrap your service's actions in a `Request` type, for adding
         /// additional message metadata.
-        pub struct Message {
+        pub struct Request {
             /// It's generally a good idea to add an ID to your messages, so it can be tracked at
             /// various stages of the process, and when sent over the network.
             /// This ID should be globally unique, such as by using UUIDs.
@@ -90,7 +90,7 @@ mod hello_service {
         world: &mut World,
         parent: Id,
         name: String,
-    ) -> Result<Handler<protocol::Message>, Error> {
+    ) -> Result<Handler<protocol::Request>, Error> {
         event!(Level::INFO, "starting");
 
         // Create the actor in the world
@@ -100,7 +100,10 @@ mod hello_service {
         let actor = Service { name };
         world.start(id, actor)?;
 
-        Ok(Handler::to(id))
+        // Handlers provide relatively cheap mapping functionality
+        let handler = Handler::to(id).map(Message::Request);
+
+        Ok(handler)
     }
 
     /// The actor implementation remains entirely private to the module, only exposed through the
@@ -110,15 +113,23 @@ mod hello_service {
         name: String,
     }
 
+    /// If your service needs to communicate with other actors, wrapping the public API in an
+    /// internal enum lets you multiplex those messages into your actor.
+    enum Message {
+        Request(protocol::Request),
+    }
+
     impl Actor for Service {
-        type Message = protocol::Message;
+        type Message = Message;
 
         fn process(&mut self, world: &mut World, mut cx: Context<Self>) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
             while let Some(message) = cx.next() {
+                let Message::Request(request) = message;
+
                 // Process the message
-                match message.action {
+                match request.action {
                     protocol::Action::Greet(to) => {
                         event!(Level::INFO, "Hello \"{}\", from {}!", to, self.name)
                     }
@@ -126,7 +137,7 @@ mod hello_service {
                         event!(Level::INFO, "stopping service");
 
                         cx.stop();
-                        on_result.handle(world, message.id);
+                        on_result.handle(world, request.id);
                     }
                 }
             }
