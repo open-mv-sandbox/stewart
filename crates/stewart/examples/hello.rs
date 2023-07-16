@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{Handler, Id, World};
+use stewart::{Handler, World};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -14,7 +14,7 @@ fn main() -> Result<(), Error> {
     let mut world = World::default();
 
     // Start the hello service
-    let service = hello_service::start(&mut world, Id::none(), "Example".to_string())?;
+    let service = hello_service::start(&mut world, "Example".to_string())?;
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
@@ -53,7 +53,7 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{Actor, Context, Handler, Id, World};
+    use stewart::{Actor, Context, Handler, World};
     use tracing::{event, instrument, Level};
 
     /// You can define your public interfaces as a "protocol", which contains just the types
@@ -86,15 +86,11 @@ mod hello_service {
 
     /// Start a hello service on the current actor world.
     #[instrument("hello::start", skip_all)]
-    pub fn start(
-        world: &mut World,
-        parent: Id,
-        name: String,
-    ) -> Result<Handler<protocol::Request>, Error> {
+    pub fn start(world: &mut World, name: String) -> Result<Handler<protocol::Request>, Error> {
         event!(Level::INFO, "starting");
 
         // Create the actor in the world
-        let id = world.create(parent, "hello")?;
+        let id = world.create("hello")?;
 
         // Start the actor
         let actor = Service { name };
@@ -125,7 +121,7 @@ mod hello_service {
         fn process(&mut self, world: &mut World, mut cx: Context<Self>) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
-            while let Some(message) = cx.next() {
+            while let Some(message) = cx.next_message() {
                 let Message::Request(request) = message;
 
                 // Process the message

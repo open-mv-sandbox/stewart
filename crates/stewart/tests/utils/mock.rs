@@ -6,8 +6,8 @@ use std::{
 use anyhow::{bail, Error};
 use stewart::{Actor, Context, Handler, Id, World};
 
-pub fn given_mock_actor(world: &mut World, parent: Id) -> Result<ActorInfo, Error> {
-    let id = world.create(parent, "mock-actor")?;
+pub fn given_mock_actor(world: &mut World) -> Result<ActorInfo, Error> {
+    let id = world.create("mock-actor")?;
 
     let instance = MockActor::default();
 
@@ -25,8 +25,8 @@ pub fn given_mock_actor(world: &mut World, parent: Id) -> Result<ActorInfo, Erro
     Ok(info)
 }
 
-pub fn given_fail_actor(world: &mut World, parent: Id) -> Result<ActorInfo, Error> {
-    let id = world.create(parent, "fail-actor")?;
+pub fn given_fail_actor(world: &mut World) -> Result<ActorInfo, Error> {
+    let id = world.create("fail-actor")?;
 
     let mut instance = MockActor::default();
     instance.fail = true;
@@ -67,7 +67,7 @@ impl Actor for MockActor {
             bail!("mock intentional fail");
         }
 
-        while let Some(_) = cx.next() {
+        while cx.next_message().is_some() {
             self.count.fetch_add(1, Ordering::SeqCst);
         }
 

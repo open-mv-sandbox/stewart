@@ -3,7 +3,7 @@ mod utils;
 use std::rc::Rc;
 
 use anyhow::Error;
-use stewart::{Actor, Context, Handler, Id, World};
+use stewart::{Actor, Context, Handler, World};
 use stewart_mio::{
     net::udp::{self, Packet},
     Registry,
@@ -19,13 +19,12 @@ fn main() -> Result<(), Error> {
 }
 
 fn init(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
-    let id = world.create(Id::none(), "echo-example")?;
+    let id = world.create("echo-example")?;
     let handler = Handler::to(id);
 
     // Start the listen port
     let info = udp::bind(
         world,
-        id,
         registry.clone(),
         "0.0.0.0:1234".parse()?,
         handler.clone().map(Message::Server),
@@ -37,7 +36,6 @@ fn init(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
     // Start the client port
     let info = udp::bind(
         world,
-        id,
         registry.clone(),
         "0.0.0.0:0".parse()?,
         handler.map(Message::Client),
@@ -76,7 +74,7 @@ impl Actor for EchoExample {
     type Message = Message;
 
     fn process(&mut self, world: &mut World, mut cx: Context<Self>) -> Result<(), Error> {
-        while let Some(message) = cx.next() {
+        while let Some(message) = cx.next_message() {
             match message {
                 Message::Server(mut packet) => {
                     let data = std::str::from_utf8(&packet.data)?;

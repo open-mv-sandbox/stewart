@@ -2,7 +2,7 @@ use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr, rc::Rc};
 
 use anyhow::Error;
 use mio::{Interest, Token};
-use stewart::{Actor, Context, Handler, Id, World};
+use stewart::{Actor, Context, Handler, World};
 use tracing::{event, instrument, Level};
 
 use crate::{registry::WakeEvent, Registry};
@@ -31,12 +31,11 @@ impl SocketInfo {
 #[instrument("udp::bind", skip_all)]
 pub fn bind(
     world: &mut World,
-    parent: Id,
     registry: Rc<Registry>,
     addr: SocketAddr,
     on_packet: Handler<Packet>,
 ) -> Result<SocketInfo, Error> {
-    let id = world.create(parent, "udp-socket")?;
+    let id = world.create("udp-socket")?;
 
     // Create the socket
     let mut socket = mio::net::UdpSocket::bind(addr)?;
@@ -88,7 +87,7 @@ impl Actor for UdpSocket {
         let mut readable = false;
         let mut writable = false;
 
-        while let Some(message) = cx.next() {
+        while let Some(message) = cx.next_message() {
             match message {
                 Message::Send(packet) => {
                     event!(Level::DEBUG, peer = ?packet.peer, "received outgoing packet");

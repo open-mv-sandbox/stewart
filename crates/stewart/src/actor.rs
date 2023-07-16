@@ -52,8 +52,8 @@ where
         self.id
     }
 
-    /// Get the next queued message, along with the actor ID it's for.
-    pub fn next(&mut self) -> Option<A::Message> {
+    /// Get the next queued message.
+    pub fn next_message(&mut self) -> Option<A::Message> {
         self.queue.pop_front()
     }
 

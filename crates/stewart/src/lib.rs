@@ -9,7 +9,6 @@ mod actor;
 mod any;
 mod handler;
 mod schedule;
-mod tree;
 mod world;
 
 use anyhow::Error;

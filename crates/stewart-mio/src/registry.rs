@@ -2,6 +2,7 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
 };
 
 use anyhow::{Context as _, Error};
@@ -29,11 +30,12 @@ impl Registry {
     }
 
     pub(crate) fn poll(&self, events: &mut Events) -> Result<(), Error> {
-        self.poll.borrow_mut().poll(events, None)?;
+        let mut poll = self.poll.borrow_mut();
+        poll.poll(events, Some(Duration::from_millis(1)))?;
         Ok(())
     }
 
-    pub(crate) fn wake(
+    pub(crate) fn send_wake(
         &self,
         world: &mut World,
         token: Token,

@@ -14,8 +14,10 @@ pub struct Handler<M> {
 enum Kind<M> {
     None,
     To(Id),
-    Map(Rc<dyn Fn(&mut World, M) -> Result<(), SendError>>),
+    Map(Rc<MapFn<M>>),
 }
+
+type MapFn<M> = dyn Fn(&mut World, M) -> Result<(), SendError>;
 
 impl<M> Handler<M>
 where

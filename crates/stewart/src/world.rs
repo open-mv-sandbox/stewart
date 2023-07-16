@@ -1,20 +1,24 @@
 use anyhow::{anyhow, Context as _, Error};
-use thunderdome::Index;
+use thunderdome::{Arena, Index};
 use tracing::{event, instrument, span, Level};
 
 use crate::{
-    any::ActorEntry,
+    any::{ActorEntry, AnyActorEntry},
     schedule::Schedule,
-    tree::{Node, Tree},
     Actor, CreateError, ProcessError, SendError, StartError,
 };
 
 /// Thread-local actor tracking and execution system.
 #[derive(Default)]
 pub struct World {
-    tree: Tree,
+    actors: Arena<Entry>,
     schedule: Schedule,
     pending_start: Vec<Index>,
+}
+
+pub struct Entry {
+    pub name: &'static str,
+    pub slot: Option<Box<dyn AnyActorEntry>>,
 }
 
 impl World {
@@ -22,20 +26,16 @@ impl World {
     ///
     /// The given `name` will be used in logging.
     #[instrument("World::create", level = "debug", skip_all)]
-    pub fn create(&mut self, parent: Id, name: &'static str) -> Result<Id, CreateError> {
+    pub fn create(&mut self, name: &'static str) -> Result<Id, CreateError> {
         event!(Level::DEBUG, name, "creating actor");
 
-        let node = Node {
-            name,
-            parent: parent.index,
-            entry: None,
-        };
-        let index = self.tree.insert(node)?;
+        let node = Entry { name, slot: None };
+        let index = self.actors.insert(node);
 
         // Track that the actor has to be started
         self.pending_start.push(index);
 
-        let id = Id { index: Some(index) };
+        let id = Id { index };
         Ok(id)
     }
 
@@ -48,18 +48,17 @@ impl World {
         event!(Level::DEBUG, "starting actor");
 
         // Find the node for the actor
-        let index = id.index.context("id can't be none")?;
-        let node = self.tree.get_mut(index).context("can't find actor")?;
+        let node = self.actors.get_mut(id.index).context("can't find actor")?;
 
         // Validate if it's not started yet
-        let maybe_index = self.pending_start.iter().position(|v| *v == index);
+        let maybe_index = self.pending_start.iter().position(|v| *v == id.index);
         let Some(pending_index) = maybe_index else {
             return Err(anyhow!("actor already started").into());
         };
 
         // Give the actor to the node
         let entry = ActorEntry::new(id, actor);
-        node.entry = Some(Box::new(entry));
+        node.slot = Some(Box::new(entry));
 
         // Finalize remove pending
         self.pending_start.remove(pending_index);
@@ -84,19 +83,18 @@ impl World {
         M: 'static,
     {
         // Get the actor in tree
-        let index = id.index.context("id can't be none")?;
-        let node = self.tree.get_mut(index).context("can't find actor")?;
+        let node = self.actors.get_mut(id.index).context("can't find actor")?;
 
         // Hand the message to the actor
         let entry = node
-            .entry
+            .slot
             .as_mut()
             .context("can't send to processing or starting")?;
         let mut message = Some(message);
         entry.enqueue(&mut message)?;
 
         // Queue for processing
-        self.schedule.queue_process(index);
+        self.schedule.queue_process(id.index);
 
         Ok(())
     }
@@ -115,10 +113,10 @@ impl World {
         Ok(())
     }
 
-    pub(crate) fn process(&mut self, index: Index) -> Result<(), Error> {
+    fn process(&mut self, index: Index) -> Result<(), Error> {
         // Borrow the actor
-        let node = self.tree.get_mut(index).context("failed to find actor")?;
-        let mut actor = node.entry.take().context("actor unavailable")?;
+        let node = self.actors.get_mut(index).context("failed to find actor")?;
+        let mut actor = node.slot.take().context("actor unavailable")?;
 
         let span = span!(Level::INFO, "actor", name = node.name);
         let _entered = span.enter();
@@ -129,10 +127,10 @@ impl World {
 
         // Return the actor
         let node = self
-            .tree
+            .actors
             .get_mut(index)
             .context("failed to find actor for return")?;
-        node.entry = Some(actor);
+        node.slot = Some(actor);
 
         // If the actor requested to remove itself, remove it
         if stop {
@@ -142,24 +140,25 @@ impl World {
         Ok(())
     }
 
-    /// Remove actor and its hierarchy.
     fn remove(&mut self, index: Index) -> Result<(), Error> {
-        self.tree.remove(index, |index| {
-            // Clean up pending messages
-            self.schedule.dequeue_process(index);
-        })?;
+        self.schedule.dequeue_process(index);
+        self.actors.remove(index);
         Ok(())
     }
 }
 
 impl Drop for World {
     fn drop(&mut self) {
-        let debug_names = self.tree.query_debug_names();
+        let mut names = Vec::new();
 
-        if !debug_names.is_empty() {
+        for (_, node) in &self.actors {
+            names.push(node.name);
+        }
+
+        if !names.is_empty() {
             event!(
                 Level::WARN,
-                ?debug_names,
+                ?names,
                 "actors not cleaned up before world drop",
             );
         }
@@ -169,12 +168,5 @@ impl Drop for World {
 /// ID of an actor slot in a `World`.
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Id {
-    index: Option<Index>,
-}
-
-impl Id {
-    /// Create a new `Id` not associated with any actor, usually representing 'root'.
-    pub fn none() -> Self {
-        Id { index: None }
-    }
+    index: Index,
 }
