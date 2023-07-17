@@ -74,14 +74,14 @@ struct EchoExample {
 }
 
 impl Actor for EchoExample {
-    fn process(&mut self, world: &mut World, _cx: Context) -> Result<(), Error> {
+    fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
         while let Some(mut packet) = self.server_packet.next() {
             let data = std::str::from_utf8(&packet.data)?;
             event!(Level::INFO, data, "server received packet");
 
             // Echo back with a hello message
             packet.data = format!("Hello, \"{}\"!", data).into_bytes();
-            self.server_sender.send(world, packet)?;
+            self.server_sender.send(ctx.world_mut(), packet)?;
         }
 
         while let Some(packet) = self.client_packet.next() {

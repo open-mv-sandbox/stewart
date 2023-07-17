@@ -3,11 +3,7 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, instrument, span, Level};
 
-use crate::{
-    any::{AnyDynActor, DynActor},
-    schedule::Schedule,
-    Actor,
-};
+use crate::{schedule::Schedule, Actor, Context};
 
 /// Thread-local actor tracking and execution system.
 #[derive(Default)]
@@ -18,7 +14,7 @@ pub struct World {
 
 struct ActorEntry {
     name: &'static str,
-    slot: Option<Box<dyn AnyDynActor>>,
+    slot: Option<Box<dyn Actor>>,
 }
 
 impl World {
@@ -32,7 +28,6 @@ impl World {
     {
         event!(Level::DEBUG, name, "creating actor");
 
-        let actor = DynActor::new(actor);
         let entry = ActorEntry {
             name,
             slot: Some(Box::new(actor)),
@@ -79,7 +74,21 @@ impl World {
         // Process the actor
         event!(Level::DEBUG, "processing actor");
         let id = Id { index };
-        let stop = actor.process(id, self);
+
+        let mut stop = false;
+        let mut ctx = Context::actor(self, id, &mut stop);
+
+        // Let the actor's implementation process
+        let result = actor.process(&mut ctx);
+
+        // Check if processing failed
+        if let Err(error) = result {
+            event!(Level::ERROR, ?error, "error while processing");
+
+            // If a processing error happens, the actor should be stopped.
+            // It's better to stop than to potentially retain inconsistent state.
+            stop = true;
+        }
 
         // Return the actor
         let node = self

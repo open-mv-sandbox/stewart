@@ -16,23 +16,21 @@ fn send_message_to_actor() -> Result<(), Error> {
     let actor = given_mock_actor(&mut world)?;
 
     when_sent_message_to(&mut world, actor.sender.clone())?;
-    assert_eq!(actor.count.load(Ordering::SeqCst), 1);
 
-    then_actor_dropped(&actor);
+    assert_eq!(actor.count.load(Ordering::SeqCst), 1);
 
     Ok(())
 }
 
 #[test]
 #[traced_test]
-fn stop_actors() -> Result<(), Error> {
+fn stop_actor() -> Result<(), Error> {
     let mut world = World::default();
 
     let actor = given_mock_actor(&mut world)?;
 
-    // Stop actor
-    actor.sender.send(&mut world, ())?;
-    world.run_until_idle()?;
+    // This will stop the actor
+    when_sent_message_to(&mut world, actor.sender.clone())?;
 
     then_actor_dropped(&actor);
 

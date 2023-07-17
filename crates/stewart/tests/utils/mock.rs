@@ -63,7 +63,7 @@ struct MockActor {
 }
 
 impl Actor for MockActor {
-    fn process(&mut self, _world: &mut World, mut cx: Context) -> Result<(), Error> {
+    fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
         if self.fail {
             bail!("mock intentional fail");
         }
@@ -73,7 +73,7 @@ impl Actor for MockActor {
         }
 
         // Stop after handling just one set of messages
-        cx.stop();
+        ctx.stop();
 
         Ok(())
     }

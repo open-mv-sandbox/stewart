@@ -6,7 +6,6 @@
 //! stewart book.
 
 mod actor;
-mod any;
 mod mailbox;
 mod schedule;
 mod world;

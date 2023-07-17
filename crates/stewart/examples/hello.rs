@@ -116,7 +116,7 @@ mod hello_service {
     }
 
     impl Actor for Service {
-        fn process(&mut self, world: &mut World, mut cx: Context) -> Result<(), Error> {
+        fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
             // Process messages on the mailbox
@@ -128,8 +128,8 @@ mod hello_service {
                     protocol::Action::Stop { on_result } => {
                         event!(Level::INFO, "stopping service");
 
-                        cx.stop();
-                        on_result.send(world, request.id)?;
+                        ctx.stop();
+                        on_result.send(ctx.world_mut(), request.id)?;
                     }
                 }
             }

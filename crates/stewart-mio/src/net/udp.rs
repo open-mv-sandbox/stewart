@@ -86,7 +86,7 @@ struct UdpSocket {
 }
 
 impl Actor for UdpSocket {
-    fn process(&mut self, world: &mut World, _cx: Context) -> Result<(), Error> {
+    fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
         let mut readable = false;
         let mut writable = false;
 
@@ -114,7 +114,7 @@ impl Actor for UdpSocket {
 
         // Handle current state if the socket is ready
         if readable {
-            self.poll_read(world)?
+            self.poll_read(ctx.world_mut())?
         }
         if writable {
             self.poll_write()?
