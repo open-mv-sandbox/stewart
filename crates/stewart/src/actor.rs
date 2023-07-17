@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 use anyhow::Error;
 
 use crate::{Id, World};
@@ -28,16 +30,6 @@ impl<'a> Context<'a> {
         Self { world, id, stop }
     }
 
-    /// Get a reference to the current world.
-    pub fn world(&self) -> &World {
-        self.world
-    }
-
-    /// Get a mutable reference to the current world.
-    pub fn world_mut(&mut self) -> &mut World {
-        self.world
-    }
-
     /// Get the ID of the current actor.
     pub fn id(&self) -> Id {
         self.id
@@ -48,5 +40,19 @@ impl<'a> Context<'a> {
     /// The stop will be applied at the end of the process step.
     pub fn stop(&mut self) {
         *self.stop = true;
+    }
+}
+
+impl<'a> Deref for Context<'a> {
+    type Target = World;
+
+    fn deref(&self) -> &Self::Target {
+        self.world
+    }
+}
+
+impl<'a> DerefMut for Context<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.world
     }
 }

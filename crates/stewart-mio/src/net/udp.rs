@@ -114,7 +114,7 @@ impl Actor for UdpSocket {
 
         // Handle current state if the socket is ready
         if readable {
-            self.poll_read(ctx.world_mut())?
+            self.poll_read(ctx)?
         }
         if writable {
             self.poll_write()?

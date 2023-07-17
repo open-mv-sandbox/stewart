@@ -81,7 +81,7 @@ impl Actor for EchoExample {
 
             // Echo back with a hello message
             packet.data = format!("Hello, \"{}\"!", data).into_bytes();
-            self.server_sender.send(ctx.world_mut(), packet)?;
+            self.server_sender.send(ctx, packet)?;
         }
 
         while let Some(packet) = self.client_packet.next() {

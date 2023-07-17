@@ -129,7 +129,7 @@ mod hello_service {
                         event!(Level::INFO, "stopping service");
 
                         ctx.stop();
-                        on_result.send(ctx.world_mut(), request.id)?;
+                        on_result.send(ctx, request.id)?;
                     }
                 }
             }
