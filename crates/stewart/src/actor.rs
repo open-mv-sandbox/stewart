@@ -1,14 +1,9 @@
-use std::collections::VecDeque;
-
 use anyhow::Error;
 
 use crate::{Id, World};
 
 /// Actor processing implementation trait.
 pub trait Actor: Sized + 'static {
-    /// The type of messages this actor receives.
-    type Message;
-
     /// Perform a processing step.
     ///
     /// This function can return `Err` to signal a fatal error to the system.
@@ -16,33 +11,23 @@ pub trait Actor: Sized + 'static {
     /// inconsistent state.
     ///
     /// You should *always* prefer this over panicking, as this crashes the entire runtime.
-    fn process(&mut self, world: &mut World, cx: Context<Self>) -> Result<(), Error>;
+    fn process(&mut self, world: &mut World, cx: Context) -> Result<(), Error>;
 }
 
 /// The context of an actor.
 ///
 /// Bundles information and state of the actor for processing.
-pub struct Context<'a, A>
-where
-    A: Actor,
-{
+///
+/// TODO: Just return if we need to stop, we don't need context anymore.
+pub struct Context<'a> {
     id: Id,
-    queue: &'a mut VecDeque<A::Message>,
     is_stop_requested: &'a mut bool,
 }
 
-impl<'a, A> Context<'a, A>
-where
-    A: Actor,
-{
-    pub(crate) fn actor(
-        id: Id,
-        queue: &'a mut VecDeque<A::Message>,
-        is_stop_requested: &'a mut bool,
-    ) -> Self {
+impl<'a> Context<'a> {
+    pub(crate) fn actor(id: Id, is_stop_requested: &'a mut bool) -> Self {
         Self {
             id,
-            queue,
             is_stop_requested,
         }
     }
@@ -50,11 +35,6 @@ where
     /// Get the ID of the current actor.
     pub fn id(&self) -> Id {
         self.id
-    }
-
-    /// Get the next queued message.
-    pub fn next_message(&mut self) -> Option<A::Message> {
-        self.queue.pop_front()
     }
 
     /// Schedule the actor to be stopped.

@@ -7,17 +7,17 @@ use std::{
 
 use anyhow::{Context as _, Error};
 use mio::{event::Source, Events, Interest, Poll, Token};
-use stewart::{Handler, World};
+use stewart::{Sender, World};
 use tracing::{event, Level};
 
 /// Shared mio context registry.
 ///
-/// Actors can use an instance of this registry to register wake events.
+/// Actors can use an instance of this registry to register ready events.
 /// The registry is created by the event loop.
 pub struct Registry {
     poll: RefCell<Poll>,
     next_token: AtomicUsize,
-    wake_handlers: RefCell<HashMap<Token, Handler<WakeEvent>>>,
+    ready_senders: RefCell<HashMap<Token, Sender<Ready>>>,
 }
 
 impl Registry {
@@ -25,7 +25,7 @@ impl Registry {
         Self {
             poll: RefCell::new(poll),
             next_token: AtomicUsize::new(0),
-            wake_handlers: Default::default(),
+            ready_senders: Default::default(),
         }
     }
 
@@ -35,23 +35,23 @@ impl Registry {
         Ok(())
     }
 
-    pub(crate) fn send_wake(
+    pub(crate) fn send_ready(
         &self,
         world: &mut World,
         token: Token,
         readable: bool,
         writable: bool,
     ) -> Result<(), Error> {
-        event!(Level::TRACE, "sending wake");
+        event!(Level::TRACE, "sending ready");
 
-        // Get the wake handler for this token
-        let wake_handlers = self.wake_handlers.borrow();
-        let handler = wake_handlers
+        // Get the ready handler for this token
+        let ready_senders = self.ready_senders.borrow();
+        let sender = ready_senders
             .get(&token)
-            .context("failed to get wake handler")?;
+            .context("failed to get ready sender")?;
 
         // Send out the message
-        handler.handle(world, WakeEvent { readable, writable })?;
+        sender.send(world, Ready { readable, writable })?;
 
         Ok(())
     }
@@ -67,13 +67,13 @@ impl Registry {
         source: &mut S,
         token: Token,
         interest: Interest,
-        wake: Handler<WakeEvent>,
+        sender: Sender<Ready>,
     ) -> Result<(), Error>
     where
         S: Source,
     {
-        // Store the waker callback
-        self.wake_handlers.borrow_mut().insert(token, wake);
+        // Store the ready callback
+        self.ready_senders.borrow_mut().insert(token, sender);
 
         // Register with the generated token
         self.poll
@@ -109,7 +109,7 @@ impl Registry {
     }
 }
 
-pub struct WakeEvent {
+pub struct Ready {
     pub readable: bool,
     pub writable: bool,
 }

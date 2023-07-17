@@ -4,20 +4,21 @@ use std::{
 };
 
 use anyhow::{bail, Error};
-use stewart::{Actor, Context, Handler, Id, World};
+use stewart::{Actor, Context, Id, Mailbox, Sender, World};
 
 pub fn given_mock_actor(world: &mut World) -> Result<ActorInfo, Error> {
-    let id = world.create("mock-actor")?;
+    let actor = MockActor::default();
 
-    let instance = MockActor::default();
+    let mailbox = actor.mailbox.clone();
+    let count = actor.count.clone();
+    let dropped = actor.dropped.clone();
 
-    let count = instance.count.clone();
-    let dropped = instance.dropped.clone();
-    world.start(id, instance)?;
+    let id = world.create("mock-actor", actor);
+    mailbox.register(id);
 
     let info = ActorInfo {
         id,
-        handler: Handler::to(id),
+        sender: mailbox.sender(),
         count,
         dropped,
     };
@@ -26,18 +27,19 @@ pub fn given_mock_actor(world: &mut World) -> Result<ActorInfo, Error> {
 }
 
 pub fn given_fail_actor(world: &mut World) -> Result<ActorInfo, Error> {
-    let id = world.create("fail-actor")?;
+    let mut actor = MockActor::default();
+    actor.fail = true;
 
-    let mut instance = MockActor::default();
-    instance.fail = true;
+    let mailbox = actor.mailbox.clone();
+    let count = actor.count.clone();
+    let dropped = actor.dropped.clone();
 
-    let count = instance.count.clone();
-    let dropped = instance.dropped.clone();
-    world.start(id, instance)?;
+    let id = world.create("fail-actor", actor);
+    mailbox.register(id);
 
     let info = ActorInfo {
         id,
-        handler: Handler::to(id),
+        sender: mailbox.sender(),
         count,
         dropped,
     };
@@ -47,27 +49,26 @@ pub fn given_fail_actor(world: &mut World) -> Result<ActorInfo, Error> {
 
 pub struct ActorInfo {
     pub id: Id,
-    pub handler: Handler<()>,
+    pub sender: Sender<()>,
     pub count: Rc<AtomicUsize>,
     pub dropped: Rc<AtomicBool>,
 }
 
 #[derive(Default)]
 struct MockActor {
+    fail: bool,
+    mailbox: Mailbox<()>,
     count: Rc<AtomicUsize>,
     dropped: Rc<AtomicBool>,
-    fail: bool,
 }
 
 impl Actor for MockActor {
-    type Message = ();
-
-    fn process(&mut self, _world: &mut World, mut cx: Context<Self>) -> Result<(), Error> {
+    fn process(&mut self, _world: &mut World, mut cx: Context) -> Result<(), Error> {
         if self.fail {
             bail!("mock intentional fail");
         }
 
-        while cx.next_message().is_some() {
+        while self.mailbox.next().is_some() {
             self.count.fetch_add(1, Ordering::SeqCst);
         }
 

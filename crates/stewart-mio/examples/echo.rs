@@ -3,7 +3,7 @@ mod utils;
 use std::rc::Rc;
 
 use anyhow::Error;
-use stewart::{Actor, Context, Handler, World};
+use stewart::{Actor, Context, Mailbox, Sender, World};
 use stewart_mio::{
     net::udp::{self, Packet},
     Registry,
@@ -19,76 +19,74 @@ fn main() -> Result<(), Error> {
 }
 
 fn init(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
-    let id = world.create("echo-example")?;
-    let handler = Handler::to(id);
+    let server_packet = Mailbox::default();
+    let client_packet = Mailbox::default();
 
     // Start the listen port
     let info = udp::bind(
         world,
         registry.clone(),
         "0.0.0.0:1234".parse()?,
-        handler.clone().map(Message::Server),
+        server_packet.sender(),
     )?;
     event!(Level::INFO, addr = ?info.local_addr(), "listening");
     let server_addr = info.local_addr();
-    let server_handler = info.handler().clone();
+    let server_sender = info.sender().clone();
 
     // Start the client port
     let info = udp::bind(
         world,
         registry.clone(),
         "0.0.0.0:0".parse()?,
-        handler.map(Message::Client),
+        client_packet.sender(),
     )?;
     event!(Level::INFO, addr = ?info.local_addr(), "sending");
 
-    let actor = EchoExample { server_handler };
-    world.start(id, actor)?;
+    let actor = EchoExample {
+        server_packet: server_packet.clone(),
+        client_packet: client_packet.clone(),
+        server_sender,
+    };
+    let id = world.create("echo-example", actor);
+    server_packet.register(id);
+    client_packet.register(id);
 
     // Send a message to be echo'd
     let packet = Packet {
         peer: server_addr,
         data: b"Client Packet".to_vec(),
     };
-    info.handler().handle(world, packet)?;
+    info.sender().send(world, packet)?;
 
     let packet = Packet {
         peer: server_addr,
         data: b"Somewhat Longer Packet".to_vec(),
     };
-    info.handler().handle(world, packet)?;
+    info.sender().send(world, packet)?;
 
     Ok(())
 }
 
 struct EchoExample {
-    server_handler: Handler<Packet>,
-}
-
-enum Message {
-    Server(Packet),
-    Client(Packet),
+    server_packet: Mailbox<Packet>,
+    client_packet: Mailbox<Packet>,
+    server_sender: Sender<Packet>,
 }
 
 impl Actor for EchoExample {
-    type Message = Message;
+    fn process(&mut self, world: &mut World, _cx: Context) -> Result<(), Error> {
+        while let Some(mut packet) = self.server_packet.next() {
+            let data = std::str::from_utf8(&packet.data)?;
+            event!(Level::INFO, data, "server received packet");
 
-    fn process(&mut self, world: &mut World, mut cx: Context<Self>) -> Result<(), Error> {
-        while let Some(message) = cx.next_message() {
-            match message {
-                Message::Server(mut packet) => {
-                    let data = std::str::from_utf8(&packet.data)?;
-                    event!(Level::INFO, data, "server received packet");
+            // Echo back with a hello message
+            packet.data = format!("Hello, \"{}\"!", data).into_bytes();
+            self.server_sender.send(world, packet)?;
+        }
 
-                    // Echo back with a hello message
-                    packet.data = format!("Hello, \"{}\"!", data).into_bytes();
-                    self.server_handler.handle(world, packet)?;
-                }
-                Message::Client(packet) => {
-                    let data = std::str::from_utf8(&packet.data)?;
-                    event!(Level::INFO, data, "client received packet");
-                }
-            }
+        while let Some(packet) = self.client_packet.next() {
+            let data = std::str::from_utf8(&packet.data)?;
+            event!(Level::INFO, data, "client received packet");
         }
 
         Ok(())

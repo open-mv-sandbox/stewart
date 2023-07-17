@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{Handler, World};
+use stewart::{Sender, World};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -24,25 +24,26 @@ fn main() -> Result<(), Error> {
         id: Uuid::new_v4(),
         action,
     };
-    service.handle(&mut world, message)?;
+    service.send(&mut world, message)?;
 
     let action = hello::Action::Greet("Actors".to_string());
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
     };
-    service.handle(&mut world, message)?;
+    service.send(&mut world, message)?;
 
-    // Stop the actor, automatically cleaning up associated resources
+    // Stop the actor
     let action = hello::Action::Stop {
         // You don't necessarily need to actually do anything with a callback.
-        on_result: Handler::none(),
+        // TODO: Demonstrate that you can receive messages without an actor.
+        on_result: Sender::none(),
     };
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
     };
-    service.handle(&mut world, message)?;
+    service.send(&mut world, message)?;
 
     // Process messages
     world.run_until_idle()?;
@@ -53,14 +54,14 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{Actor, Context, Handler, World};
+    use stewart::{Actor, Context, Mailbox, Sender, World};
     use tracing::{event, instrument, Level};
 
     /// You can define your public interfaces as a "protocol", which contains just the types
     /// necessary to talk to your service.
     /// This is equivalent to an "interface" or "trait".
     pub mod protocol {
-        use stewart::Handler;
+        use stewart::Sender;
         use uuid::Uuid;
 
         /// It's good practice to wrap your service's actions in a `Request` type, for adding
@@ -79,27 +80,31 @@ mod hello_service {
                 /// As part of your protocol, you can include handlers to respond.
                 /// Of course when bridging between worlds and across the network, these can't be
                 /// directly serialized, but they can be stored by 'envoy' actors.
-                on_result: Handler<Uuid>,
+                on_result: Sender<Uuid>,
             },
         }
     }
 
     /// Start a hello service on the current actor world.
     #[instrument("hello::start", skip_all)]
-    pub fn start(world: &mut World, name: String) -> Result<Handler<protocol::Request>, Error> {
+    pub fn start(world: &mut World, name: String) -> Result<Sender<protocol::Request>, Error> {
         event!(Level::INFO, "starting");
 
+        // Mailboxes let you send message around
+        let mailbox = Mailbox::default();
+
         // Create the actor in the world
-        let id = world.create("hello")?;
+        let actor = Service {
+            name,
+            mailbox: mailbox.clone(),
+        };
+        let id = world.create("hello", actor);
 
-        // Start the actor
-        let actor = Service { name };
-        world.start(id, actor)?;
+        // To wake up our actor when a message gets sent, register it with the mailbox for
+        // notification
+        mailbox.register(id);
 
-        // Handlers provide relatively cheap mapping functionality
-        let handler = Handler::to(id).map(Message::Request);
-
-        Ok(handler)
+        Ok(mailbox.sender())
     }
 
     /// The actor implementation remains entirely private to the module, only exposed through the
@@ -107,24 +112,15 @@ mod hello_service {
     /// Since it is private, you are recommended to avoid `namespace::namespace`ing your types.
     struct Service {
         name: String,
-    }
-
-    /// If your service needs to communicate with other actors, wrapping the public API in an
-    /// internal enum lets you multiplex those messages into your actor.
-    enum Message {
-        Request(protocol::Request),
+        mailbox: Mailbox<protocol::Request>,
     }
 
     impl Actor for Service {
-        type Message = Message;
-
-        fn process(&mut self, world: &mut World, mut cx: Context<Self>) -> Result<(), Error> {
+        fn process(&mut self, world: &mut World, mut cx: Context) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
-            while let Some(message) = cx.next_message() {
-                let Message::Request(request) = message;
-
-                // Process the message
+            // Process messages on the mailbox
+            while let Some(request) = self.mailbox.next() {
                 match request.action {
                     protocol::Action::Greet(to) => {
                         event!(Level::INFO, "Hello \"{}\", from {}!", to, self.name)
@@ -133,7 +129,7 @@ mod hello_service {
                         event!(Level::INFO, "stopping service");
 
                         cx.stop();
-                        on_result.handle(world, request.id)?;
+                        on_result.send(world, request.id)?;
                     }
                 }
             }

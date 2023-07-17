@@ -15,7 +15,7 @@ fn send_message_to_actor() -> Result<(), Error> {
 
     let actor = given_mock_actor(&mut world)?;
 
-    when_sent_message_to(&mut world, actor.handler.clone())?;
+    when_sent_message_to(&mut world, actor.sender.clone())?;
     assert_eq!(actor.count.load(Ordering::SeqCst), 1);
 
     then_actor_dropped(&actor);
@@ -31,7 +31,7 @@ fn stop_actors() -> Result<(), Error> {
     let actor = given_mock_actor(&mut world)?;
 
     // Stop actor
-    actor.handler.handle(&mut world, ())?;
+    actor.sender.send(&mut world, ())?;
     world.run_until_idle()?;
 
     then_actor_dropped(&actor);
@@ -46,7 +46,7 @@ fn failed_stopped() -> Result<(), Error> {
 
     let actor = given_fail_actor(&mut world)?;
 
-    when_sent_message_to(&mut world, actor.handler.clone())?;
+    when_sent_message_to(&mut world, actor.sender.clone())?;
 
     then_actor_dropped(&actor);
 

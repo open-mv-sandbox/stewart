@@ -2,10 +2,10 @@ use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr, rc::Rc};
 
 use anyhow::Error;
 use mio::{Interest, Token};
-use stewart::{Actor, Context, Handler, World};
+use stewart::{Actor, Context, Mailbox, Sender, World};
 use tracing::{event, instrument, Level};
 
-use crate::{registry::WakeEvent, Registry};
+use crate::{registry::Ready, Registry};
 
 #[derive(Debug)]
 pub struct Packet {
@@ -14,13 +14,13 @@ pub struct Packet {
 }
 
 pub struct SocketInfo {
-    handler: Handler<Packet>,
+    sender: Sender<Packet>,
     local_addr: SocketAddr,
 }
 
 impl SocketInfo {
-    pub fn handler(&self) -> &Handler<Packet> {
-        &self.handler
+    pub fn sender(&self) -> &Sender<Packet> {
+        &self.sender
     }
 
     pub fn local_addr(&self) -> SocketAddr {
@@ -33,85 +33,86 @@ pub fn bind(
     world: &mut World,
     registry: Rc<Registry>,
     addr: SocketAddr,
-    on_packet: Handler<Packet>,
+    on_packet: Sender<Packet>,
 ) -> Result<SocketInfo, Error> {
-    let id = world.create("udp-socket")?;
+    let outgoing = Mailbox::default();
+    let ready = Mailbox::default();
 
     // Create the socket
     let mut socket = mio::net::UdpSocket::bind(addr)?;
     let local_addr = socket.local_addr()?;
-
-    // Register the socket
     let token = registry.token();
-    let wake = Handler::to(id).map(Message::Wake);
-    registry.register(&mut socket, token, Interest::READABLE, wake)?;
+
+    // Register the socket for ready events
+    registry.register(&mut socket, token, Interest::READABLE, ready.sender())?;
 
     let actor = UdpSocket {
+        outgoing: outgoing.clone(),
+        ready: ready.clone(),
+        on_packet,
+
         registry,
         socket,
         token,
 
         // Max size of a UDP packet
         buffer: vec![0; 65536],
-        on_packet,
         queue: VecDeque::new(),
     };
-    world.start(id, actor)?;
+    let id = world.create("udp-socket", actor);
 
+    outgoing.register(id);
+    ready.register(id);
+
+    // Create the info wrapper the caller will use
     let info = SocketInfo {
-        handler: Handler::to(id).map(Message::Send),
+        sender: outgoing.sender(),
         local_addr,
     };
     Ok(info)
 }
 
 struct UdpSocket {
+    outgoing: Mailbox<Packet>,
+    ready: Mailbox<Ready>,
+    on_packet: Sender<Packet>,
+
     registry: Rc<Registry>,
     socket: mio::net::UdpSocket,
     token: Token,
 
     buffer: Vec<u8>,
     queue: VecDeque<Packet>,
-    on_packet: Handler<Packet>,
-}
-
-enum Message {
-    Send(Packet),
-    Wake(WakeEvent),
 }
 
 impl Actor for UdpSocket {
-    type Message = Message;
-
-    fn process(&mut self, world: &mut World, mut cx: Context<Self>) -> Result<(), Error> {
+    fn process(&mut self, world: &mut World, _cx: Context) -> Result<(), Error> {
         let mut readable = false;
         let mut writable = false;
 
-        while let Some(message) = cx.next_message() {
-            match message {
-                Message::Send(packet) => {
-                    event!(Level::DEBUG, peer = ?packet.peer, "received outgoing packet");
+        while let Some(packet) = self.outgoing.next() {
+            event!(Level::DEBUG, peer = ?packet.peer, "received outgoing packet");
 
-                    // Queue outgoing packet
-                    let should_register = self.queue.is_empty();
-                    self.queue.push_back(packet);
+            // Queue outgoing packet
+            let should_register = self.queue.is_empty();
+            self.queue.push_back(packet);
 
-                    // Reregister so we can receive write events
-                    if should_register {
-                        self.registry.reregister(
-                            &mut self.socket,
-                            self.token,
-                            Interest::READABLE | Interest::WRITABLE,
-                        )?;
-                    }
-                }
-                Message::Wake(event) => {
-                    readable |= event.readable;
-                    writable |= event.writable;
-                }
+            // Reregister so we can receive write events
+            if should_register {
+                self.registry.reregister(
+                    &mut self.socket,
+                    self.token,
+                    Interest::READABLE | Interest::WRITABLE,
+                )?;
             }
         }
 
+        while let Some(ready) = self.ready.next() {
+            readable |= ready.readable;
+            writable |= ready.writable;
+        }
+
+        // Handle current state if the socket is ready
         if readable {
             self.poll_read(world)?
         }
@@ -154,7 +155,7 @@ impl UdpSocket {
         // Send the packet to the listener
         let data = self.buffer[..size].to_vec();
         let packet = Packet { peer, data };
-        self.on_packet.handle(world, packet)?;
+        self.on_packet.send(world, packet)?;
 
         Ok(true)
     }

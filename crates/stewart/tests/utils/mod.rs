@@ -3,14 +3,14 @@ mod mock;
 use std::sync::atomic::Ordering;
 
 use anyhow::{Context as _, Error};
-use stewart::{Handler, World};
+use stewart::{Sender, World};
 
 pub use mock::{given_fail_actor, given_mock_actor};
 
 use self::mock::ActorInfo;
 
-pub fn when_sent_message_to(world: &mut World, handler: Handler<()>) -> Result<(), Error> {
-    handler.handle(world, ())?;
+pub fn when_sent_message_to(world: &mut World, sender: Sender<()>) -> Result<(), Error> {
+    sender.send(world, ())?;
 
     world
         .run_until_idle()

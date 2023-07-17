@@ -39,9 +39,9 @@ fn run_poll_loop(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error
         // Wait for pending events
         registry.poll(&mut events)?;
 
-        // Send out wake events
+        // Send out ready events
         for event in events.iter() {
-            registry.send_wake(
+            registry.send_ready(
                 world,
                 event.token(),
                 event.is_readable(),
@@ -50,7 +50,7 @@ fn run_poll_loop(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error
         }
 
         // Process all pending actor messages
-        // This will likely start with the wake messages
+        // This will likely start with the ready messages
         event!(Level::TRACE, "processing poll step messages");
         world.run_until_idle()?;
     }
