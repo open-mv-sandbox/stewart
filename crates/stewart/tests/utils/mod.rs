@@ -9,7 +9,7 @@ pub use mock::{given_fail_actor, given_mock_actor};
 
 use self::mock::ActorInfo;
 
-pub fn when_sent_message_to(world: &mut World, sender: Sender<()>) -> Result<(), Error> {
+pub fn when_sent_message_to(world: &mut World, sender: &Sender<()>) -> Result<(), Error> {
     sender.send(world, ())?;
 
     world
@@ -17,6 +17,10 @@ pub fn when_sent_message_to(world: &mut World, sender: Sender<()>) -> Result<(),
         .context("failed to process after sending")?;
 
     Ok(())
+}
+
+pub fn then_messages_received(actor: &ActorInfo, count: usize) {
+    assert_eq!(actor.count.load(Ordering::SeqCst), count);
 }
 
 pub fn then_actor_dropped(actor: &ActorInfo) {

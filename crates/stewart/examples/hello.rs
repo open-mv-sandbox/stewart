@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{Sender, World};
+use stewart::{Mailbox, World};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -34,10 +34,10 @@ fn main() -> Result<(), Error> {
     service.send(&mut world, message)?;
 
     // Stop the actor
+    let mailbox = Mailbox::default();
     let action = hello::Action::Stop {
-        // You don't necessarily need to actually do anything with a callback.
-        // TODO: Demonstrate that you can receive messages without an actor.
-        on_result: Sender::none(),
+        // Mailboxes don't need to be associated with an actor.
+        on_result: mailbox.sender(),
     };
     let message = hello::Request {
         id: Uuid::new_v4(),
@@ -47,6 +47,11 @@ fn main() -> Result<(), Error> {
 
     // Process messages
     world.run_until_idle()?;
+
+    // We can receive messages outside actors by just checking
+    while let Some(uuid) = mailbox.next() {
+        event!(Level::INFO, ?uuid, "received stop response");
+    }
 
     Ok(())
 }

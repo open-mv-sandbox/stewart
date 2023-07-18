@@ -62,46 +62,32 @@ impl<M> Mailbox<M> {
     /// Create a sender for sending messages to this mailbox.
     pub fn sender(&self) -> Sender<M> {
         Sender {
-            inner: Some(Rc::downgrade(&self.inner)),
+            inner: Rc::downgrade(&self.inner),
         }
     }
 }
 
 /// Sending utility, for sending messages to a mailbox.
 pub struct Sender<M> {
-    inner: Option<Weak<RefCell<MailboxInner<M>>>>,
+    inner: Weak<RefCell<MailboxInner<M>>>,
 }
 
 impl<M> Sender<M> {
-    /// Create no-op sender, that always succeeds but throws away the message.
-    ///
-    /// TODO: Consider if this is behavior we want at all? Creating mailboxes is now a lot easier
-    /// than handlers were earlier, and no longer need an actor.
-    pub fn none() -> Self {
-        Self { inner: None }
-    }
-
     /// Send a message to the target mailbox of this sender.
     pub fn send(&self, world: &mut World, message: M) -> Result<(), SendError> {
-        // Check if we have a mailbox or if we're no-op
-        let Some(inner) = self.inner.as_ref() else {
-            return Ok(())
-        };
-
         // Check if the mailbox is still available
-        let Some(inner) = inner.upgrade() else {
+        let Some(inner) = self.inner.upgrade() else {
             return Err(anyhow!("mailbox closed").into())
         };
         let mut inner = inner.borrow_mut();
 
-        // Check if there's an actor listening
-        let Some(notify) = inner.notify else {
-            return Err(anyhow!("no actor listening").into())
-        };
-
         // Finally, apply the message to the queue and notify
         inner.queue.push_back(message);
-        world.notify(notify);
+
+        // Notify a listening actor
+        if let Some(notify) = inner.notify {
+            world.notify(notify);
+        }
 
         Ok(())
     }
@@ -117,7 +103,7 @@ impl<M> Clone for Sender<M> {
 
 /// Error while sending message.
 ///
-/// This happens if the receiving mailbox no longer exists, or isn't registered to an actor.
+/// This happens if the receiving mailbox no longer exists.
 #[derive(Error, Debug)]
 #[error("sending message failed")]
 pub struct SendError {
