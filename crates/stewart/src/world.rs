@@ -56,15 +56,19 @@ impl World {
     #[instrument("World::run_until_idle", level = "debug", skip_all)]
     pub fn run_until_idle(&mut self) -> Result<(), ProcessError> {
         while let Some(index) = self.schedule.next() {
-            self.process(index).context("failed to process")?;
+            let id = Id { index };
+            self.process(id).context("failed to process")?;
         }
 
         Ok(())
     }
 
-    fn process(&mut self, index: Index) -> Result<(), Error> {
+    fn process(&mut self, id: Id) -> Result<(), Error> {
         // Borrow the actor
-        let node = self.actors.get_mut(index).context("failed to find actor")?;
+        let node = self
+            .actors
+            .get_mut(id.index)
+            .context("failed to find actor")?;
         let mut actor = node.slot.take().context("actor unavailable")?;
 
         // TODO: Re-think our usage of tracing, we maybe should use an actor-native logging system.
@@ -73,7 +77,6 @@ impl World {
 
         // Process the actor
         event!(Level::DEBUG, "processing actor");
-        let id = Id { index };
 
         let mut stop = false;
         let mut ctx = Context::actor(self, id, &mut stop);
@@ -93,21 +96,33 @@ impl World {
         // Return the actor
         let node = self
             .actors
-            .get_mut(index)
+            .get_mut(id.index)
             .context("failed to find actor for return")?;
         node.slot = Some(actor);
 
-        // If the actor requested to remove itself, remove it
+        // If the actor requested to stop, stop it
         if stop {
-            self.remove(index)?;
+            self.stop(id).context("failed to stop actor")?;
         }
 
         Ok(())
     }
 
-    fn remove(&mut self, index: Index) -> Result<(), Error> {
-        self.schedule.dequeue_process(index);
-        self.actors.remove(index);
+    fn stop(&mut self, id: Id) -> Result<(), Error> {
+        event!(Level::DEBUG, "stopping actor");
+
+        self.schedule.dequeue_process(id.index);
+
+        let actor = self
+            .actors
+            .remove(id.index)
+            .context("failed to find actor")?;
+        let mut actor = actor.slot.context("actor unavailable")?;
+
+        let mut stop = false;
+        let mut ctx = Context::actor(self, id, &mut stop);
+        actor.stop(&mut ctx);
+
         Ok(())
     }
 }

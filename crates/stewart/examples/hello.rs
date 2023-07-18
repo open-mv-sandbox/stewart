@@ -141,5 +141,9 @@ mod hello_service {
 
             Ok(())
         }
+
+        fn stop(&mut self, _ctx: &mut Context) {
+            event!(Level::INFO, "service stopping");
+        }
     }
 }
