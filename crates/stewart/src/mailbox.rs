@@ -81,7 +81,7 @@ impl<M> Sender<M> {
         };
         let mut inner = inner.borrow_mut();
 
-        // Finally, apply the message to the queue and notify
+        // Apply the message to the queue and notify
         inner.queue.push_back(message);
 
         // Notify a listening actor
