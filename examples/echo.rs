@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use anyhow::Error;
 use stewart::{Actor, Context, World};
-use stewart_message::{Mailbox, Sender};
+use stewart_message::{mailbox, Mailbox, Sender};
 use stewart_mio::{
     net::udp::{self, Packet},
     Registry,
@@ -20,27 +20,22 @@ fn main() -> Result<(), Error> {
 }
 
 fn init(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
-    let server_packet = Mailbox::default();
-    let client_packet = Mailbox::default();
+    let (server_packet, server_sender) = mailbox();
+    let (client_packet, client_sender) = mailbox();
 
     // Start the listen port
     let info = udp::bind(
         world,
         registry.clone(),
         "0.0.0.0:1234".parse()?,
-        server_packet.sender(),
+        server_sender,
     )?;
     event!(Level::INFO, addr = ?info.local_addr(), "listening");
     let server_addr = info.local_addr();
     let server_sender = info.sender().clone();
 
     // Start the client port
-    let info = udp::bind(
-        world,
-        registry.clone(),
-        "0.0.0.0:0".parse()?,
-        client_packet.sender(),
-    )?;
+    let info = udp::bind(world, registry.clone(), "0.0.0.0:0".parse()?, client_sender)?;
     event!(Level::INFO, addr = ?info.local_addr(), "sending");
 
     let actor = EchoExample {
@@ -76,7 +71,7 @@ struct EchoExample {
 
 impl Actor for EchoExample {
     fn process(&mut self, _ctx: &mut Context) -> Result<(), Error> {
-        while let Some(mut packet) = self.server_packet.next() {
+        while let Some(mut packet) = self.server_packet.recv() {
             let data = std::str::from_utf8(&packet.data)?;
             event!(Level::INFO, data, "server received packet");
 
@@ -85,7 +80,7 @@ impl Actor for EchoExample {
             self.server_sender.send(packet)?;
         }
 
-        while let Some(packet) = self.client_packet.next() {
+        while let Some(packet) = self.client_packet.recv() {
             let data = std::str::from_utf8(&packet.data)?;
             event!(Level::INFO, data, "client received packet");
         }

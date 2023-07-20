@@ -3,7 +3,7 @@ use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr, rc::Rc};
 use anyhow::Error;
 use mio::{Interest, Token};
 use stewart::{Actor, Context, World};
-use stewart_message::{Mailbox, Sender};
+use stewart_message::{mailbox, Mailbox, Sender};
 use tracing::{event, instrument, Level};
 
 use crate::{registry::Ready, Registry};
@@ -36,8 +36,8 @@ pub fn bind(
     addr: SocketAddr,
     on_packet: Sender<Packet>,
 ) -> Result<SocketInfo, Error> {
-    let outgoing = Mailbox::default();
-    let ready = Mailbox::default();
+    let (outgoing, outgoing_sender) = mailbox();
+    let (ready, ready_sender) = mailbox();
 
     // Create the socket
     let mut socket = mio::net::UdpSocket::bind(addr)?;
@@ -45,7 +45,7 @@ pub fn bind(
     let token = registry.token();
 
     // Register the socket for ready events
-    registry.register(&mut socket, token, Interest::READABLE, ready.sender())?;
+    registry.register(&mut socket, token, Interest::READABLE, ready_sender)?;
 
     let actor = UdpSocket {
         outgoing: outgoing.clone(),
@@ -67,7 +67,7 @@ pub fn bind(
 
     // Create the info wrapper the caller will use
     let info = SocketInfo {
-        sender: outgoing.sender(),
+        sender: outgoing_sender,
         local_addr,
     };
     Ok(info)
@@ -91,7 +91,7 @@ impl Actor for UdpSocket {
         let mut readable = false;
         let mut writable = false;
 
-        while let Some(packet) = self.outgoing.next() {
+        while let Some(packet) = self.outgoing.recv() {
             event!(Level::DEBUG, peer = ?packet.peer, "received outgoing packet");
 
             // Queue outgoing packet
@@ -108,7 +108,7 @@ impl Actor for UdpSocket {
             }
         }
 
-        while let Some(ready) = self.ready.next() {
+        while let Some(ready) = self.ready.recv() {
             readable |= ready.readable;
             writable |= ready.writable;
         }

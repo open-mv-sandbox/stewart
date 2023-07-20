@@ -9,6 +9,20 @@ use thiserror::Error;
 
 use stewart::Signal;
 
+pub fn mailbox<M>() -> (Mailbox<M>, Sender<M>) {
+    let inner = MailboxInner {
+        queue: VecDeque::new(),
+        notify: None,
+    };
+    let inner = Rc::new(RefCell::new(inner));
+    let weak = Rc::downgrade(&inner);
+
+    let mailbox = Mailbox { inner };
+    let sender = Sender { inner: weak };
+
+    (mailbox, sender)
+}
+
 /// Shared *single-threaded* multi-sender multi-receiver message queue.
 ///
 /// An instance of `Mailbox` is considered 'authoritative'.
@@ -18,18 +32,6 @@ use stewart::Signal;
 /// notified.
 pub struct Mailbox<M> {
     inner: Rc<RefCell<MailboxInner<M>>>,
-}
-
-impl<M> Default for Mailbox<M> {
-    fn default() -> Self {
-        let inner = MailboxInner {
-            queue: VecDeque::new(),
-            notify: None,
-        };
-        Self {
-            inner: Rc::new(RefCell::new(inner)),
-        }
-    }
 }
 
 impl<M> Clone for Mailbox<M> {
@@ -55,15 +57,8 @@ impl<M> Mailbox<M> {
     }
 
     /// Get the next message, if any is available.
-    pub fn next(&self) -> Option<M> {
+    pub fn recv(&self) -> Option<M> {
         self.inner.borrow_mut().queue.pop_front()
-    }
-
-    /// Create a sender for sending messages to this mailbox.
-    pub fn sender(&self) -> Sender<M> {
-        Sender {
-            inner: Rc::downgrade(&self.inner),
-        }
     }
 }
 

@@ -1,3 +1,3 @@
 mod mailbox;
 
-pub use self::mailbox::{Mailbox, Sender};
+pub use self::mailbox::{mailbox, Mailbox, SendError, Sender};

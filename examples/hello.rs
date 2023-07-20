@@ -2,7 +2,7 @@ mod utils;
 
 use anyhow::Error;
 use stewart::World;
-use stewart_message::Mailbox;
+use stewart_message::mailbox;
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -21,13 +21,13 @@ fn main() -> Result<(), Error> {
     event!(Level::INFO, "sending messages");
 
     // Mailboxes don't need to be associated with an actor.
-    let mailbox = Mailbox::default();
+    let (mailbox, sender) = mailbox();
 
     let action = hello::Action::Greet("World".to_string());
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
-        on_result: mailbox.sender(),
+        on_result: sender.clone(),
     };
     service.send(message)?;
 
@@ -35,7 +35,7 @@ fn main() -> Result<(), Error> {
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
-        on_result: mailbox.sender(),
+        on_result: sender.clone(),
     };
     service.send(message)?;
 
@@ -43,7 +43,7 @@ fn main() -> Result<(), Error> {
     let message = hello::Request {
         id: Uuid::new_v4(),
         action: hello::Action::Stop,
-        on_result: mailbox.sender(),
+        on_result: sender.clone(),
     };
     service.send(message)?;
 
@@ -51,7 +51,7 @@ fn main() -> Result<(), Error> {
     world.run_until_idle()?;
 
     // We can receive messages outside actors by just checking
-    while let Some(uuid) = mailbox.next() {
+    while let Some(uuid) = mailbox.recv() {
         event!(Level::INFO, ?uuid, "received response");
     }
 
@@ -62,7 +62,7 @@ fn main() -> Result<(), Error> {
 mod hello_service {
     use anyhow::Error;
     use stewart::{Actor, Context, World};
-    use stewart_message::{Mailbox, Sender};
+    use stewart_message::{mailbox, Mailbox, Sender};
     use tracing::{event, instrument, Level};
 
     /// You can define your public interfaces as a "protocol", which contains just the types
@@ -102,7 +102,7 @@ mod hello_service {
         event!(Level::INFO, "starting");
 
         // Mailboxes let you send message around
-        let mailbox = Mailbox::default();
+        let (mailbox, sender) = mailbox();
 
         // Create the actor in the world
         let actor = Service {
@@ -115,7 +115,7 @@ mod hello_service {
         // notification
         mailbox.register(signal);
 
-        Ok(mailbox.sender())
+        Ok(sender)
     }
 
     /// The actor implementation remains entirely private to the module, only exposed through the
@@ -131,7 +131,7 @@ mod hello_service {
             event!(Level::INFO, "processing messages");
 
             // Process messages on the mailbox
-            while let Some(request) = self.mailbox.next() {
+            while let Some(request) = self.mailbox.recv() {
                 match request.action {
                     protocol::Action::Greet(to) => {
                         event!(Level::INFO, "Hello \"{}\", from {}!", to, self.name);
