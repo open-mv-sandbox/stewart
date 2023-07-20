@@ -16,17 +16,6 @@ pub trait Actor: 'static {
     /// You should *always* prefer this over panicking, as this crashes the entire runtime.
     /// Instead of using `unwrap` or `expect`, use `context` from the `anyhow` crate.
     fn process(&mut self, ctx: &mut Context) -> Result<(), Error>;
-
-    /// Clean up the actor when stopping explicitly, or due to an error.
-    ///
-    /// You can use this to propagate stop messages to other actors.
-    ///
-    /// This function will **not** be called on `World` drop.
-    /// If you need to clean up resources external to the `World`, use `drop` instead.
-    ///
-    /// TODO: This is fragile and prone to mistakes as a mechanism to cleaning up dependencies.
-    /// Maybe we should have automatic stop-on-drop handles?
-    fn stop(&mut self, _ctx: &mut Context) {}
 }
 
 /// The context of an actor.

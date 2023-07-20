@@ -104,12 +104,7 @@ impl World {
 
         self.schedule.unregister(index)?;
 
-        let actor = self.actors.remove(index).context("failed to find actor")?;
-        let mut actor = actor.slot.context("actor unavailable")?;
-
-        let mut stop = false;
-        let mut ctx = Context::actor(self, index, &mut stop);
-        actor.stop(&mut ctx);
+        self.actors.remove(index).context("failed to find actor")?;
 
         Ok(())
     }

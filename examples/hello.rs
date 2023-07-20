@@ -20,10 +20,14 @@ fn main() -> Result<(), Error> {
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
 
+    // Mailboxes don't need to be associated with an actor.
+    let mailbox = Mailbox::default();
+
     let action = hello::Action::Greet("World".to_string());
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
+        on_result: mailbox.sender(),
     };
     service.send(message)?;
 
@@ -31,18 +35,15 @@ fn main() -> Result<(), Error> {
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
+        on_result: mailbox.sender(),
     };
     service.send(message)?;
 
     // Stop the actor
-    let mailbox = Mailbox::default();
-    let action = hello::Action::Stop {
-        // Mailboxes don't need to be associated with an actor.
-        on_result: mailbox.sender(),
-    };
     let message = hello::Request {
         id: Uuid::new_v4(),
-        action,
+        action: hello::Action::Stop,
+        on_result: mailbox.sender(),
     };
     service.send(message)?;
 
@@ -51,7 +52,7 @@ fn main() -> Result<(), Error> {
 
     // We can receive messages outside actors by just checking
     while let Some(uuid) = mailbox.next() {
-        event!(Level::INFO, ?uuid, "received stop response");
+        event!(Level::INFO, ?uuid, "received response");
     }
 
     Ok(())
@@ -78,17 +79,20 @@ mod hello_service {
             /// various stages of the process, and when sent over the network.
             /// This ID should be globally unique, such as by using UUIDs.
             pub id: Uuid,
+
+            /// You can make different actions available through the same protocol message.
+            /// Though, here we only need one.
             pub action: Action,
+
+            /// As part of your protocol, you can include handlers to respond.
+            /// Of course when bridging between worlds and across the network, these can't be
+            /// directly serialized, but they can be translated by 'envoy' actors.
+            pub on_result: Sender<Uuid>,
         }
 
         pub enum Action {
             Greet(String),
-            Stop {
-                /// As part of your protocol, you can include handlers to respond.
-                /// Of course when bridging between worlds and across the network, these can't be
-                /// directly serialized, but they can be stored by 'envoy' actors.
-                on_result: Sender<Uuid>,
-            },
+            Stop,
         }
     }
 
@@ -130,21 +134,25 @@ mod hello_service {
             while let Some(request) = self.mailbox.next() {
                 match request.action {
                     protocol::Action::Greet(to) => {
-                        event!(Level::INFO, "Hello \"{}\", from {}!", to, self.name)
+                        event!(Level::INFO, "Hello \"{}\", from {}!", to, self.name);
                     }
-                    protocol::Action::Stop { on_result } => {
-                        event!(Level::INFO, "stopping service");
-
+                    protocol::Action::Stop => {
                         ctx.stop();
-                        on_result.send(request.id)?;
                     }
                 }
+
+                // Reply back to the sender
+                request.on_result.send(request.id)?;
             }
 
             Ok(())
         }
+    }
 
-        fn stop(&mut self, _ctx: &mut Context) {
+    impl Drop for Service {
+        fn drop(&mut self) {
+            // If you have dependency services that need to be stopped explicitly, you can do so
+            // here using `Sender`s.
             event!(Level::INFO, "service stopping");
         }
     }
