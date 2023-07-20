@@ -1,8 +1,9 @@
 use std::ops::{Deref, DerefMut};
 
 use anyhow::Error;
+use thunderdome::Index;
 
-use crate::{Id, World};
+use crate::{Signal, World};
 
 /// Actor processing implementation trait.
 pub trait Actor: 'static {
@@ -24,8 +25,7 @@ pub trait Actor: 'static {
     /// If you need to clean up resources external to the `World`, use `drop` instead.
     ///
     /// TODO: This is fragile and prone to mistakes as a mechanism to cleaning up dependencies.
-    /// Maybe we should have automatic stop-on-drop handles? This would require a mechanism for
-    /// notifying actors without directly receiving the world as mutable reference.
+    /// Maybe we should have automatic stop-on-drop handles?
     fn stop(&mut self, _ctx: &mut Context) {}
 }
 
@@ -34,18 +34,18 @@ pub trait Actor: 'static {
 /// Bundles information and state of the actor for processing.
 pub struct Context<'a> {
     world: &'a mut World,
-    id: Id,
+    index: Index,
     stop: &'a mut bool,
 }
 
 impl<'a> Context<'a> {
-    pub(crate) fn actor(world: &'a mut World, id: Id, stop: &'a mut bool) -> Self {
-        Self { world, id, stop }
+    pub(crate) fn actor(world: &'a mut World, index: Index, stop: &'a mut bool) -> Self {
+        Self { world, index, stop }
     }
 
-    /// Get the ID of the current actor.
-    pub fn id(&self) -> Id {
-        self.id
+    /// Get a `Signal` instance for the current actor.
+    pub fn signal(&self) -> Signal {
+        self.world.create_signal(self.index)
     }
 
     /// Schedule the actor to be stopped.

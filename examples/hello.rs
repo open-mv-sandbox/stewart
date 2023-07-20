@@ -25,14 +25,14 @@ fn main() -> Result<(), Error> {
         id: Uuid::new_v4(),
         action,
     };
-    service.send(&mut world, message)?;
+    service.send(message)?;
 
     let action = hello::Action::Greet("Actors".to_string());
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
     };
-    service.send(&mut world, message)?;
+    service.send(message)?;
 
     // Stop the actor
     let mailbox = Mailbox::default();
@@ -44,7 +44,7 @@ fn main() -> Result<(), Error> {
         id: Uuid::new_v4(),
         action,
     };
-    service.send(&mut world, message)?;
+    service.send(message)?;
 
     // Process messages
     world.run_until_idle()?;
@@ -105,11 +105,11 @@ mod hello_service {
             name,
             mailbox: mailbox.clone(),
         };
-        let id = world.create("hello", actor);
+        let signal = world.create("hello", actor);
 
         // To wake up our actor when a message gets sent, register it with the mailbox for
         // notification
-        mailbox.register(id);
+        mailbox.register(signal);
 
         Ok(mailbox.sender())
     }
@@ -136,7 +136,7 @@ mod hello_service {
                         event!(Level::INFO, "stopping service");
 
                         ctx.stop();
-                        on_result.send(ctx, request.id)?;
+                        on_result.send(request.id)?;
                     }
                 }
             }

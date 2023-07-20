@@ -4,10 +4,10 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use anyhow::{anyhow, Error};
+use anyhow::{anyhow, Context, Error};
 use thiserror::Error;
 
-use stewart::{Id, World};
+use stewart::Signal;
 
 /// Shared *single-threaded* multi-sender multi-receiver message queue.
 ///
@@ -42,7 +42,7 @@ impl<M> Clone for Mailbox<M> {
 
 struct MailboxInner<M> {
     queue: VecDeque<M>,
-    notify: Option<Id>,
+    notify: Option<Signal>,
 }
 
 impl<M> Mailbox<M> {
@@ -50,8 +50,8 @@ impl<M> Mailbox<M> {
     ///
     /// Only one actor can be registered at a time, setting this will remove the previous
     /// registration.
-    pub fn register(&self, id: Id) {
-        self.inner.borrow_mut().notify = Some(id);
+    pub fn register(&self, signal: Signal) {
+        self.inner.borrow_mut().notify = Some(signal);
     }
 
     /// Get the next message, if any is available.
@@ -74,7 +74,7 @@ pub struct Sender<M> {
 
 impl<M> Sender<M> {
     /// Send a message to the target mailbox of this sender.
-    pub fn send(&self, world: &mut World, message: M) -> Result<(), SendError> {
+    pub fn send(&self, message: M) -> Result<(), SendError> {
         // Check if the mailbox is still available
         let Some(inner) = self.inner.upgrade() else {
             return Err(anyhow!("mailbox closed").into())
@@ -85,8 +85,10 @@ impl<M> Sender<M> {
         inner.queue.push_back(message);
 
         // Notify a listening actor
-        if let Some(notify) = inner.notify {
-            world.notify(notify);
+        if let Some(signal) = inner.notify.as_ref() {
+            signal
+                .notify()
+                .context("failed to notify registered actor")?;
         }
 
         Ok(())

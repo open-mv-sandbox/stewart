@@ -7,7 +7,6 @@ use std::{
 
 use anyhow::{Context as _, Error};
 use mio::{event::Source, Events, Interest, Poll, Token};
-use stewart::World;
 use stewart_message::Sender;
 use tracing::{event, Level};
 
@@ -38,7 +37,6 @@ impl Registry {
 
     pub(crate) fn send_ready(
         &self,
-        world: &mut World,
         token: Token,
         readable: bool,
         writable: bool,
@@ -52,7 +50,7 @@ impl Registry {
             .context("failed to get ready sender")?;
 
         // Send out the message
-        sender.send(world, Ready { readable, writable })?;
+        sender.send(Ready { readable, writable })?;
 
         Ok(())
     }

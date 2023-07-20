@@ -41,12 +41,7 @@ fn run_poll_loop(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error
 
         // Send out ready events
         for event in events.iter() {
-            registry.send_ready(
-                world,
-                event.token(),
-                event.is_readable(),
-                event.is_writable(),
-            )?;
+            registry.send_ready(event.token(), event.is_readable(), event.is_writable())?;
         }
 
         // Process all pending actor messages

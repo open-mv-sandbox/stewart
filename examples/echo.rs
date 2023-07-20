@@ -48,22 +48,22 @@ fn init(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
         client_packet: client_packet.clone(),
         server_sender,
     };
-    let id = world.create("echo-example", actor);
-    server_packet.register(id);
-    client_packet.register(id);
+    let signal = world.create("echo-example", actor);
+    server_packet.register(signal.clone());
+    client_packet.register(signal);
 
     // Send a message to be echo'd
     let packet = Packet {
         peer: server_addr,
         data: b"Client Packet".to_vec(),
     };
-    info.sender().send(world, packet)?;
+    info.sender().send(packet)?;
 
     let packet = Packet {
         peer: server_addr,
         data: b"Somewhat Longer Packet".to_vec(),
     };
-    info.sender().send(world, packet)?;
+    info.sender().send(packet)?;
 
     Ok(())
 }
@@ -75,14 +75,14 @@ struct EchoExample {
 }
 
 impl Actor for EchoExample {
-    fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
+    fn process(&mut self, _ctx: &mut Context) -> Result<(), Error> {
         while let Some(mut packet) = self.server_packet.next() {
             let data = std::str::from_utf8(&packet.data)?;
             event!(Level::INFO, data, "server received packet");
 
             // Echo back with a hello message
             packet.data = format!("Hello, \"{}\"!", data).into_bytes();
-            self.server_sender.send(ctx, packet)?;
+            self.server_sender.send(packet)?;
         }
 
         while let Some(packet) = self.client_packet.next() {

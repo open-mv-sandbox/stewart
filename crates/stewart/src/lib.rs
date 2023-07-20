@@ -7,9 +7,11 @@
 
 mod actor;
 mod schedule;
+mod signal;
 mod world;
 
 pub use self::{
     actor::{Actor, Context},
-    world::{Id, ProcessError, World},
+    signal::Signal,
+    world::{ProcessError, World},
 };

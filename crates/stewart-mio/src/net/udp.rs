@@ -60,10 +60,10 @@ pub fn bind(
         buffer: vec![0; 65536],
         queue: VecDeque::new(),
     };
-    let id = world.create("udp-socket", actor);
+    let signal = world.create("udp-socket", actor);
 
-    outgoing.register(id);
-    ready.register(id);
+    outgoing.register(signal.clone());
+    ready.register(signal);
 
     // Create the info wrapper the caller will use
     let info = SocketInfo {
@@ -87,7 +87,7 @@ struct UdpSocket {
 }
 
 impl Actor for UdpSocket {
-    fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
+    fn process(&mut self, _ctx: &mut Context) -> Result<(), Error> {
         let mut readable = false;
         let mut writable = false;
 
@@ -115,7 +115,7 @@ impl Actor for UdpSocket {
 
         // Handle current state if the socket is ready
         if readable {
-            self.poll_read(ctx)?
+            self.poll_read()?
         }
         if writable {
             self.poll_write()?
@@ -126,15 +126,15 @@ impl Actor for UdpSocket {
 }
 
 impl UdpSocket {
-    fn poll_read(&mut self, world: &mut World) -> Result<(), Error> {
+    fn poll_read(&mut self) -> Result<(), Error> {
         event!(Level::TRACE, "polling read");
 
-        while self.try_recv(world)? {}
+        while self.try_recv()? {}
 
         Ok(())
     }
 
-    fn try_recv(&mut self, world: &mut World) -> Result<bool, Error> {
+    fn try_recv(&mut self) -> Result<bool, Error> {
         // Attempt to receive packet
         let result = self.socket.recv_from(&mut self.buffer);
 
@@ -156,7 +156,7 @@ impl UdpSocket {
         // Send the packet to the listener
         let data = self.buffer[..size].to_vec();
         let packet = Packet { peer, data };
-        self.on_packet.send(world, packet)?;
+        self.on_packet.send(packet)?;
 
         Ok(true)
     }
