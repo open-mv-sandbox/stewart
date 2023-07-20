@@ -7,7 +7,7 @@ use std::{
 use anyhow::{anyhow, Error};
 use thiserror::Error;
 
-use crate::{Id, World};
+use stewart::{Id, World};
 
 /// Shared *single-threaded* multi-sender multi-receiver message queue.
 ///

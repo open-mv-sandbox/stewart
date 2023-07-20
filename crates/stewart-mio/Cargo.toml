@@ -1,6 +1,6 @@
 [package]
 name = "stewart-mio"
-version = "0.1.0"
+version = "0.1.0-dev"
 edition = "2021"
 description = "Mio event loop runner for stewart"
 readme = "../../README.md"
@@ -13,6 +13,7 @@ mio = { workspace = true, features = ["os-poll", "net"] }
 tracing.workspace = true
 uuid.workspace = true
 stewart.workspace = true
+stewart-message.workspace = true
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

@@ -22,6 +22,10 @@ pub trait Actor: 'static {
     ///
     /// This function will **not** be called on `World` drop.
     /// If you need to clean up resources external to the `World`, use `drop` instead.
+    ///
+    /// TODO: This is fragile and prone to mistakes as a mechanism to cleaning up dependencies.
+    /// Maybe we should have automatic stop-on-drop handles? This would require a mechanism for
+    /// notifying actors without directly receiving the world as mutable reference.
     fn stop(&mut self, _ctx: &mut Context) {}
 }
 

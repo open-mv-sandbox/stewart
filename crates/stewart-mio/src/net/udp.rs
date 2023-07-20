@@ -2,7 +2,8 @@ use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr, rc::Rc};
 
 use anyhow::Error;
 use mio::{Interest, Token};
-use stewart::{Actor, Context, Mailbox, Sender, World};
+use stewart::{Actor, Context, World};
+use stewart_message::{Mailbox, Sender};
 use tracing::{event, instrument, Level};
 
 use crate::{registry::Ready, Registry};

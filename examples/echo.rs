@@ -3,7 +3,8 @@ mod utils;
 use std::rc::Rc;
 
 use anyhow::Error;
-use stewart::{Actor, Context, Mailbox, Sender, World};
+use stewart::{Actor, Context, World};
+use stewart_message::{Mailbox, Sender};
 use stewart_mio::{
     net::udp::{self, Packet},
     Registry,

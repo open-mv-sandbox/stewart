@@ -1,0 +1,22 @@
+[package]
+name = "examples"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[dev-dependencies]
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid = { workspace = true, features = ["v4"] }
+stewart.workspace = true
+stewart-message.workspace = true
+stewart-mio.workspace = true
+
+[[example]]
+name = "echo"
+path = "echo.rs"
+
+[[example]]
+name = "hello"
+path = "hello.rs"

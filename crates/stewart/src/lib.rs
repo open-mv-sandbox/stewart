@@ -6,12 +6,10 @@
 //! stewart book.
 
 mod actor;
-mod mailbox;
 mod schedule;
 mod world;
 
 pub use self::{
     actor::{Actor, Context},
-    mailbox::{Mailbox, Sender},
     world::{Id, ProcessError, World},
 };

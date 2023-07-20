@@ -1,8 +1,8 @@
 [package]
-name = "stewart"
-version = "0.10.0-dev"
+name = "stewart-message"
+version = "0.1.0-dev"
 edition = "2021"
-description = "A minimalist, high-performance, and non-exclusive actor system"
+description = "Messaging utilities for stewart"
 readme = "../../README.md"
 repository = "https://github.com/open-mv-sandbox/stewart"
 license = "MIT OR Apache-2.0"
@@ -10,5 +10,4 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 anyhow.workspace = true
 thiserror.workspace = true
-thunderdome.workspace = true
-tracing.workspace = true
+stewart.workspace = true
