@@ -2,7 +2,7 @@
 
 Actors, done well.
 
-[Read the stewart book for a detailed explanation.](docs/src/index.md)
+[Read the stewart book for a detailed explanation.](https://open-mv-sandbox.github.io/stewart/)
 
 ## Crates
 
