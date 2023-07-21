@@ -2,7 +2,7 @@ use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr, rc::Rc};
 
 use anyhow::Error;
 use mio::{Interest, Token};
-use stewart::{Actor, Context, World};
+use stewart::{Actor, After, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
 use tracing::{event, instrument, Level};
 
@@ -87,7 +87,7 @@ struct UdpSocket {
 }
 
 impl Actor for UdpSocket {
-    fn process(&mut self, _ctx: &mut Context) -> Result<(), Error> {
+    fn process(&mut self, _ctx: &mut Context) -> Result<After, Error> {
         let mut readable = false;
         let mut writable = false;
 
@@ -121,7 +121,7 @@ impl Actor for UdpSocket {
             self.poll_write()?
         }
 
-        Ok(())
+        Ok(After::Continue)
     }
 }
 

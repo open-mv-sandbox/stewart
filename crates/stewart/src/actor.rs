@@ -1,9 +1,6 @@
-use std::ops::{Deref, DerefMut};
-
 use anyhow::Error;
-use thunderdome::Index;
 
-use crate::{Signal, World};
+use crate::Context;
 
 /// Actor processing implementation trait.
 pub trait Actor: 'static {
@@ -15,46 +12,14 @@ pub trait Actor: 'static {
     ///
     /// You should *always* prefer this over panicking, as this crashes the entire runtime.
     /// Instead of using `unwrap` or `expect`, use `context` from the `anyhow` crate.
-    fn process(&mut self, ctx: &mut Context) -> Result<(), Error>;
+    fn process(&mut self, ctx: &mut Context) -> Result<After, Error>;
 }
 
-/// The context of an actor.
-///
-/// Bundles information and state of the actor for processing.
-pub struct Context<'a> {
-    world: &'a mut World,
-    index: Index,
-    stop: &'a mut bool,
-}
-
-impl<'a> Context<'a> {
-    pub(crate) fn actor(world: &'a mut World, index: Index, stop: &'a mut bool) -> Self {
-        Self { world, index, stop }
-    }
-
-    /// Get a `Signal` instance for the current actor.
-    pub fn signal(&self) -> Signal {
-        self.world.create_signal(self.index)
-    }
-
-    /// Schedule the actor to be stopped.
-    ///
-    /// The stop will be applied at the end of the process step.
-    pub fn stop(&mut self) {
-        *self.stop = true;
-    }
-}
-
-impl<'a> Deref for Context<'a> {
-    type Target = World;
-
-    fn deref(&self) -> &Self::Target {
-        self.world
-    }
-}
-
-impl<'a> DerefMut for Context<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.world
-    }
+/// What to do with an actor after a process step.
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum After {
+    /// Continue running the actor.
+    Continue,
+    /// Stop the actor, removing it from the `World` and dropping it.
+    Stop,
 }

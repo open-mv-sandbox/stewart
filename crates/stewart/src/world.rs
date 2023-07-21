@@ -5,7 +5,7 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, instrument, span, Level};
 
-use crate::{schedule::Schedule, Actor, Context, Signal};
+use crate::{schedule::Schedule, Actor, After, Context, Signal};
 
 /// Thread-local actor tracking and execution system.
 #[derive(Default)]
@@ -69,20 +69,22 @@ impl World {
         // Process the actor
         event!(Level::DEBUG, "processing actor");
 
-        let mut stop = false;
-        let mut ctx = Context::actor(self, index, &mut stop);
+        let mut ctx = Context::actor(self, index);
 
         // Let the actor's implementation process
         let result = actor.process(&mut ctx);
 
         // Check if processing failed
-        if let Err(error) = result {
-            event!(Level::ERROR, ?error, "error while processing");
+        let after = match result {
+            Ok(after) => after,
+            Err(error) => {
+                event!(Level::ERROR, ?error, "error while processing");
 
-            // If a processing error happens, the actor should be stopped.
-            // It's better to stop than to potentially retain inconsistent state.
-            stop = true;
-        }
+                // If a processing error happens, the actor should be stopped.
+                // It's better to stop than to potentially retain inconsistent state.
+                After::Stop
+            }
+        };
 
         // Return the actor
         let node = self
@@ -92,7 +94,7 @@ impl World {
         node.slot = Some(actor);
 
         // If the actor requested to stop, stop it
-        if stop {
+        if after == After::Stop {
             self.stop(index).context("failed to stop actor")?;
         }
 

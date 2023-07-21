@@ -61,7 +61,7 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{Actor, Context, World};
+    use stewart::{Actor, After, Context, World};
     use stewart_message::{mailbox, Mailbox, Sender};
     use tracing::{event, instrument, Level};
 
@@ -127,7 +127,7 @@ mod hello_service {
     }
 
     impl Actor for Service {
-        fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
+        fn process(&mut self, _ctx: &mut Context) -> Result<After, Error> {
             event!(Level::INFO, "processing messages");
 
             // Process messages on the mailbox
@@ -137,7 +137,7 @@ mod hello_service {
                         event!(Level::INFO, "Hello \"{}\", from {}!", to, self.name);
                     }
                     protocol::Action::Stop => {
-                        ctx.stop();
+                        return Ok(After::Stop);
                     }
                 }
 
@@ -145,7 +145,7 @@ mod hello_service {
                 request.on_result.send(request.id)?;
             }
 
-            Ok(())
+            Ok(After::Continue)
         }
     }
 

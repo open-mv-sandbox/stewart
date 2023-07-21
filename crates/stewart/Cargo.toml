@@ -2,7 +2,7 @@
 name = "stewart"
 version = "0.10.0-dev"
 edition = "2021"
-description = "A minimalist, high-performance, and non-exclusive actor system"
+description = "Actors, done well"
 readme = "../../README.md"
 repository = "https://github.com/open-mv-sandbox/stewart"
 license = "MIT OR Apache-2.0"

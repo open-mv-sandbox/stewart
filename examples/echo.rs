@@ -3,7 +3,7 @@ mod utils;
 use std::rc::Rc;
 
 use anyhow::Error;
-use stewart::{Actor, Context, World};
+use stewart::{Actor, After, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
 use stewart_mio::{
     net::udp::{self, Packet},
@@ -70,7 +70,7 @@ struct EchoExample {
 }
 
 impl Actor for EchoExample {
-    fn process(&mut self, _ctx: &mut Context) -> Result<(), Error> {
+    fn process(&mut self, _ctx: &mut Context) -> Result<After, Error> {
         while let Some(mut packet) = self.server_packet.recv() {
             let data = std::str::from_utf8(&packet.data)?;
             event!(Level::INFO, data, "server received packet");
@@ -85,6 +85,6 @@ impl Actor for EchoExample {
             event!(Level::INFO, data, "client received packet");
         }
 
-        Ok(())
+        Ok(After::Continue)
     }
 }

@@ -6,12 +6,14 @@
 //! stewart book.
 
 mod actor;
+mod context;
 mod schedule;
 mod signal;
 mod world;
 
 pub use self::{
-    actor::{Actor, Context},
+    actor::{Actor, After},
+    context::Context,
     signal::Signal,
     world::{ProcessError, World},
 };
