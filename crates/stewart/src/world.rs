@@ -1,17 +1,15 @@
-use std::rc::Rc;
-
 use anyhow::{Context as _, Error};
 use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, instrument, span, Level};
 
-use crate::{schedule::Schedule, Actor, After, Context, Signal};
+use crate::{signal::SignalReceiver, Actor, After, Context, Signal};
 
 /// Thread-local actor tracking and execution system.
 #[derive(Default)]
 pub struct World {
     actors: Arena<ActorEntry>,
-    schedule: Rc<Schedule>,
+    receiver: SignalReceiver,
 }
 
 struct ActorEntry {
@@ -37,20 +35,20 @@ impl World {
         };
         let index = self.actors.insert(entry);
 
-        // Track it in the schedule
-        self.schedule.register(index);
+        // Track it in the receiver
+        self.receiver.register(index);
 
-        self.create_signal(index)
+        self.signal(index)
     }
 
-    pub(crate) fn create_signal(&self, index: Index) -> Signal {
-        Signal::new(&self.schedule, index)
+    pub(crate) fn signal(&self, index: Index) -> Signal {
+        self.receiver.signal(index)
     }
 
     /// Process all pending actors, until none are left pending.
     #[instrument("World::run_until_idle", level = "debug", skip_all)]
     pub fn run_until_idle(&mut self) -> Result<(), ProcessError> {
-        while let Some(index) = self.schedule.next()? {
+        while let Some(index) = self.receiver.next()? {
             self.process(index).context("failed to process")?;
         }
 
@@ -104,7 +102,7 @@ impl World {
     fn stop(&mut self, index: Index) -> Result<(), Error> {
         event!(Level::DEBUG, "stopping actor");
 
-        self.schedule.unregister(index)?;
+        self.receiver.unregister(index)?;
 
         self.actors.remove(index).context("failed to find actor")?;
 

@@ -62,8 +62,8 @@ pub fn bind(
     };
     let signal = world.create("udp-socket", actor);
 
-    outgoing.register(signal.clone());
-    ready.register(signal);
+    outgoing.signal(signal.clone());
+    ready.signal(signal);
 
     // Create the info wrapper the caller will use
     let info = SocketInfo {

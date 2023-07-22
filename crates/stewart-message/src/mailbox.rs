@@ -48,11 +48,10 @@ struct MailboxInner<M> {
 }
 
 impl<M> Mailbox<M> {
-    /// Register an actor to be notified when this mailbox receives a message.
+    /// Set the `Signal` to be sent when this mailbox receives a message.
     ///
-    /// Only one actor can be registered at a time, setting this will remove the previous
-    /// registration.
-    pub fn register(&self, signal: Signal) {
+    /// Only one signal can be set at a time, setting this will remove the previous value.
+    pub fn signal(&self, signal: Signal) {
         self.inner.borrow_mut().notify = Some(signal);
     }
 
@@ -81,9 +80,7 @@ impl<M> Sender<M> {
 
         // Notify a listening actor
         if let Some(signal) = inner.notify.as_ref() {
-            signal
-                .notify()
-                .context("failed to notify registered actor")?;
+            signal.send().context("failed to notify registered actor")?;
         }
 
         Ok(())

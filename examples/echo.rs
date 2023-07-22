@@ -44,8 +44,8 @@ fn init(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
         server_sender,
     };
     let signal = world.create("echo-example", actor);
-    server_packet.register(signal.clone());
-    client_packet.register(signal);
+    server_packet.signal(signal.clone());
+    client_packet.signal(signal);
 
     // Send a message to be echo'd
     let packet = Packet {

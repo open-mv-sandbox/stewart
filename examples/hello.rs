@@ -113,7 +113,7 @@ mod hello_service {
 
         // To wake up our actor when a message gets sent, register it with the mailbox for
         // notification
-        mailbox.register(signal);
+        mailbox.signal(signal);
 
         Ok(sender)
     }
@@ -129,6 +129,7 @@ mod hello_service {
     impl Actor for Service {
         fn process(&mut self, _ctx: &mut Context) -> Result<After, Error> {
             event!(Level::INFO, "processing messages");
+            let mut after = After::Continue;
 
             // Process messages on the mailbox
             while let Some(request) = self.mailbox.recv() {
@@ -137,7 +138,7 @@ mod hello_service {
                         event!(Level::INFO, "Hello \"{}\", from {}!", to, self.name);
                     }
                     protocol::Action::Stop => {
-                        return Ok(After::Stop);
+                        after = After::Stop;
                     }
                 }
 
@@ -145,7 +146,7 @@ mod hello_service {
                 request.on_result.send(request.id)?;
             }
 
-            Ok(After::Continue)
+            Ok(after)
         }
     }
 

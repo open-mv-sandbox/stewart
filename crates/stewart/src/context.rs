@@ -19,7 +19,7 @@ impl<'a> Context<'a> {
 
     /// Get a `Signal` instance for the current actor.
     pub fn signal(&self) -> Signal {
-        self.world.create_signal(self.index)
+        self.world.signal(self.index)
     }
 }
 

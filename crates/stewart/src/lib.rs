@@ -7,7 +7,6 @@
 
 mod actor;
 mod context;
-mod schedule;
 mod signal;
 mod world;
 
