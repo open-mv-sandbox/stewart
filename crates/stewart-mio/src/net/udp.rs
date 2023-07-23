@@ -2,11 +2,18 @@ use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr, rc::Rc};
 
 use anyhow::Error;
 use mio::{Interest, Token};
-use stewart::{Actor, After, Context, World};
+use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
 use tracing::{event, instrument, Level};
 
 use crate::{registry::Ready, Registry};
+
+pub enum Message {
+    /// Send a packet to a peer.
+    Send(Packet),
+    /// Close and stop the socket.
+    Close,
+}
 
 #[derive(Debug)]
 pub struct Packet {
@@ -15,13 +22,18 @@ pub struct Packet {
 }
 
 pub struct SocketInfo {
-    sender: Sender<Packet>,
+    send: Sender<Message>,
+    recv: Mailbox<Packet>,
     local_addr: SocketAddr,
 }
 
 impl SocketInfo {
-    pub fn sender(&self) -> &Sender<Packet> {
-        &self.sender
+    pub fn send(&self) -> &Sender<Message> {
+        &self.send
+    }
+
+    pub fn recv(&self) -> &Mailbox<Packet> {
+        &self.recv
     }
 
     pub fn local_addr(&self) -> SocketAddr {
@@ -34,9 +46,9 @@ pub fn bind(
     world: &mut World,
     registry: Rc<Registry>,
     addr: SocketAddr,
-    on_packet: Sender<Packet>,
 ) -> Result<SocketInfo, Error> {
-    let (outgoing, outgoing_sender) = mailbox();
+    let (recv_mailbox, recv_sender) = mailbox();
+    let (send_mailbox, send_sender) = mailbox();
     let (ready, ready_sender) = mailbox();
 
     // Create the socket
@@ -48,9 +60,9 @@ pub fn bind(
     registry.register(&mut socket, token, Interest::READABLE, ready_sender)?;
 
     let actor = UdpSocket {
-        outgoing: outgoing.clone(),
+        send: send_mailbox.clone(),
+        recv: recv_sender,
         ready: ready.clone(),
-        on_packet,
 
         registry,
         socket,
@@ -62,21 +74,22 @@ pub fn bind(
     };
     let signal = world.create("udp-socket", actor);
 
-    outgoing.signal(signal.clone());
+    send_mailbox.signal(signal.clone());
     ready.signal(signal);
 
     // Create the info wrapper the caller will use
     let info = SocketInfo {
-        sender: outgoing_sender,
+        send: send_sender,
+        recv: recv_mailbox,
         local_addr,
     };
     Ok(info)
 }
 
 struct UdpSocket {
-    outgoing: Mailbox<Packet>,
+    send: Mailbox<Message>,
+    recv: Sender<Packet>,
     ready: Mailbox<Ready>,
-    on_packet: Sender<Packet>,
 
     registry: Rc<Registry>,
     socket: mio::net::UdpSocket,
@@ -87,26 +100,48 @@ struct UdpSocket {
 }
 
 impl Actor for UdpSocket {
-    fn process(&mut self, _ctx: &mut Context) -> Result<After, Error> {
-        let mut readable = false;
-        let mut writable = false;
+    fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
+        self.poll_mailbox(ctx)?;
+        self.poll_ready()?;
 
-        while let Some(packet) = self.outgoing.recv() {
-            event!(Level::DEBUG, peer = ?packet.peer, "received outgoing packet");
+        Ok(())
+    }
+}
 
-            // Queue outgoing packet
-            let should_register = self.queue.is_empty();
-            self.queue.push_back(packet);
-
-            // Reregister so we can receive write events
-            if should_register {
-                self.registry.reregister(
-                    &mut self.socket,
-                    self.token,
-                    Interest::READABLE | Interest::WRITABLE,
-                )?;
+impl UdpSocket {
+    fn poll_mailbox(&mut self, ctx: &mut Context) -> Result<(), Error> {
+        while let Some(message) = self.send.recv() {
+            match message {
+                Message::Send(packet) => self.on_message_packet(packet)?,
+                Message::Close => ctx.set_stop(),
             }
         }
+
+        Ok(())
+    }
+
+    fn on_message_packet(&mut self, packet: Packet) -> Result<(), Error> {
+        event!(Level::DEBUG, peer = ?packet.peer, "received outgoing packet");
+
+        // Queue outgoing packet
+        let should_register = self.queue.is_empty();
+        self.queue.push_back(packet);
+
+        // Reregister so we can receive write events
+        if should_register {
+            self.registry.reregister(
+                &mut self.socket,
+                self.token,
+                Interest::READABLE | Interest::WRITABLE,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn poll_ready(&mut self) -> Result<(), Error> {
+        let mut readable = false;
+        let mut writable = false;
 
         while let Some(ready) = self.ready.recv() {
             readable |= ready.readable;
@@ -121,11 +156,9 @@ impl Actor for UdpSocket {
             self.poll_write()?
         }
 
-        Ok(After::Continue)
+        Ok(())
     }
-}
 
-impl UdpSocket {
     fn poll_read(&mut self) -> Result<(), Error> {
         event!(Level::TRACE, "polling read");
 
@@ -156,7 +189,7 @@ impl UdpSocket {
         // Send the packet to the listener
         let data = self.buffer[..size].to_vec();
         let packet = Packet { peer, data };
-        self.on_packet.send(packet)?;
+        self.recv.send(packet)?;
 
         Ok(true)
     }

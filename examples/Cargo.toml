@@ -12,11 +12,16 @@ uuid = { workspace = true, features = ["v4"] }
 stewart.workspace = true
 stewart-message.workspace = true
 stewart-mio.workspace = true
-
-[[example]]
-name = "echo"
-path = "echo.rs"
+stewart-quic.workspace = true
 
 [[example]]
 name = "hello"
 path = "hello.rs"
+
+[[example]]
+name = "quic_server"
+path = "quic_server.rs"
+
+[[example]]
+name = "udp_echo"
+path = "udp_echo.rs"

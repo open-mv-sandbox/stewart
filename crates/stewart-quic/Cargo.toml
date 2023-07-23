@@ -1,0 +1,17 @@
+[package]
+name = "stewart-quic"
+version = "0.1.0"
+edition = "2021"
+description = "QUIC implementation for stewart, based on quinn-proto"
+readme = "../../README.md"
+repository = "https://github.com/open-mv-sandbox/stewart"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+anyhow.workspace = true
+quinn-proto.workspace = true
+rustls.workspace = true
+tracing.workspace = true
+
+# TODO: This needs to be moved out of this crate at least
+rcgen.workspace = true

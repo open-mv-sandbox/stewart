@@ -10,11 +10,25 @@ use crate::{Signal, World};
 pub struct Context<'a> {
     world: &'a mut World,
     index: Index,
+    stop: bool,
 }
 
 impl<'a> Context<'a> {
     pub(crate) fn actor(world: &'a mut World, index: Index) -> Self {
-        Self { world, index }
+        Self {
+            world,
+            index,
+            stop: false,
+        }
+    }
+
+    pub(crate) fn stop(&self) -> bool {
+        self.stop
+    }
+
+    /// Set the actor to stop after this process call.
+    pub fn set_stop(&mut self) {
+        self.stop = true;
     }
 
     /// Get a `Signal` instance for the current actor.

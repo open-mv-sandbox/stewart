@@ -8,7 +8,6 @@ use std::{
 use anyhow::{Context as _, Error};
 use mio::{event::Source, Events, Interest, Poll, Token};
 use stewart_message::Sender;
-use tracing::{event, Level};
 
 /// Shared mio context registry.
 ///
@@ -35,22 +34,13 @@ impl Registry {
         Ok(())
     }
 
-    pub(crate) fn send_ready(
-        &self,
-        token: Token,
-        readable: bool,
-        writable: bool,
-    ) -> Result<(), Error> {
-        event!(Level::TRACE, "sending ready");
-
-        // Get the ready handler for this token
+    pub(crate) fn send(&self, token: Token, ready: Ready) -> Result<(), Error> {
         let ready_senders = self.ready_senders.borrow();
         let sender = ready_senders
             .get(&token)
             .context("failed to get ready sender")?;
 
-        // Send out the message
-        sender.send(Ready { readable, writable })?;
+        sender.send(ready)?;
 
         Ok(())
     }
@@ -108,6 +98,7 @@ impl Registry {
     }
 }
 
+#[derive(Debug)]
 pub struct Ready {
     pub readable: bool,
     pub writable: bool,

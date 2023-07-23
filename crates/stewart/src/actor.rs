@@ -12,14 +12,5 @@ pub trait Actor: 'static {
     ///
     /// You should *always* prefer this over panicking, as this crashes the entire runtime.
     /// Instead of using `unwrap` or `expect`, use `context` from the `anyhow` crate.
-    fn process(&mut self, ctx: &mut Context) -> Result<After, Error>;
-}
-
-/// What to do with an actor after a process step.
-#[derive(PartialEq, Eq, Debug, Clone, Copy)]
-pub enum After {
-    /// Continue running the actor.
-    Continue,
-    /// Stop the actor, removing it from the `World` and dropping it.
-    Stop,
+    fn process(&mut self, ctx: &mut Context) -> Result<(), Error>;
 }

@@ -3,7 +3,7 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, instrument, span, Level};
 
-use crate::{signal::SignalReceiver, Actor, After, Context, Signal};
+use crate::{signal::SignalReceiver, Actor, Context, Signal};
 
 /// Thread-local actor tracking and execution system.
 #[derive(Default)]
@@ -73,14 +73,14 @@ impl World {
         let result = actor.process(&mut ctx);
 
         // Check if processing failed
-        let after = match result {
-            Ok(after) => after,
+        let stop = match result {
+            Ok(()) => ctx.stop(),
             Err(error) => {
                 event!(Level::ERROR, ?error, "error while processing");
 
                 // If a processing error happens, the actor should be stopped.
                 // It's better to stop than to potentially retain inconsistent state.
-                After::Stop
+                true
             }
         };
 
@@ -92,7 +92,7 @@ impl World {
         node.slot = Some(actor);
 
         // If the actor requested to stop, stop it
-        if after == After::Stop {
+        if stop {
             self.stop(index).context("failed to stop actor")?;
         }
 
