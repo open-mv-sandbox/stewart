@@ -47,46 +47,13 @@ pub fn bind(
     registry: Rc<Registry>,
     addr: SocketAddr,
 ) -> Result<SocketInfo, Error> {
-    let (recv_mailbox, recv_sender) = mailbox();
-    let (send_mailbox, send_sender) = mailbox();
-    let (ready, ready_sender) = mailbox();
+    let (actor, info) = Socket::new(registry, addr)?;
+    world.create("udp-socket", actor)?;
 
-    // Create the socket
-    let mut socket = mio::net::UdpSocket::bind(addr)?;
-    let local_addr = socket.local_addr()?;
-    let token = registry.token();
-
-    // Register the socket for ready events
-    registry.register(&mut socket, token, Interest::READABLE, ready_sender)?;
-
-    let actor = UdpSocket {
-        send: send_mailbox.clone(),
-        recv: recv_sender,
-        ready: ready.clone(),
-
-        registry,
-        socket,
-        token,
-
-        // Max size of a UDP packet
-        buffer: vec![0; 65536],
-        queue: VecDeque::new(),
-    };
-    let signal = world.create("udp-socket", actor);
-
-    send_mailbox.signal(signal.clone());
-    ready.signal(signal);
-
-    // Create the info wrapper the caller will use
-    let info = SocketInfo {
-        send: send_sender,
-        recv: recv_mailbox,
-        local_addr,
-    };
     Ok(info)
 }
 
-struct UdpSocket {
+struct Socket {
     send: Mailbox<Message>,
     recv: Sender<Packet>,
     ready: Mailbox<Ready>,
@@ -99,7 +66,50 @@ struct UdpSocket {
     queue: VecDeque<Packet>,
 }
 
-impl Actor for UdpSocket {
+impl Socket {
+    fn new(registry: Rc<Registry>, addr: SocketAddr) -> Result<(Self, SocketInfo), Error> {
+        let (recv_mailbox, recv_sender) = mailbox();
+        let (send_mailbox, send_sender) = mailbox();
+        let (ready, ready_sender) = mailbox();
+
+        // Create the socket
+        let mut socket = mio::net::UdpSocket::bind(addr)?;
+        let local_addr = socket.local_addr()?;
+        let token = registry.token();
+
+        // Register the socket for ready events
+        registry.register(&mut socket, token, Interest::READABLE, ready_sender)?;
+
+        let actor = Socket {
+            send: send_mailbox.clone(),
+            recv: recv_sender,
+            ready: ready.clone(),
+
+            registry,
+            socket,
+            token,
+
+            // Max size of a UDP packet
+            buffer: vec![0; 65536],
+            queue: VecDeque::new(),
+        };
+        let info = SocketInfo {
+            send: send_sender,
+            recv: recv_mailbox,
+            local_addr,
+        };
+        Ok((actor, info))
+    }
+}
+
+impl Actor for Socket {
+    fn start(&mut self, ctx: &mut Context) -> Result<(), Error> {
+        self.send.signal(ctx.signal());
+        self.ready.signal(ctx.signal());
+
+        Ok(())
+    }
+
     fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
         self.poll_mailbox(ctx)?;
         self.poll_ready()?;
@@ -108,7 +118,7 @@ impl Actor for UdpSocket {
     }
 }
 
-impl UdpSocket {
+impl Socket {
     fn poll_mailbox(&mut self, ctx: &mut Context) -> Result<(), Error> {
         while let Some(message) = self.send.recv() {
             match message {
@@ -233,7 +243,7 @@ impl UdpSocket {
     }
 }
 
-impl Drop for UdpSocket {
+impl Drop for Socket {
     fn drop(&mut self) {
         // Cleanup the current socket from the registry
         let result = self.registry.deregister(&mut self.socket);

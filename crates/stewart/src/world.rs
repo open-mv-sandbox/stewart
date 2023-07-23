@@ -18,11 +18,15 @@ struct ActorEntry {
 }
 
 impl World {
+    pub(crate) fn signal(&self, index: Index) -> Signal {
+        self.receiver.signal(index)
+    }
+
     /// Create a new actor.
     ///
     /// The given `name` will be used in logging.
     #[instrument("World::create", level = "debug", skip_all)]
-    pub fn create<A>(&mut self, name: &'static str, actor: A) -> Signal
+    pub fn create<A>(&mut self, name: &'static str, actor: A) -> Result<(), Error>
     where
         A: Actor,
     {
@@ -38,24 +42,28 @@ impl World {
         // Track it in the receiver
         self.receiver.register(index);
 
-        self.signal(index)
-    }
+        // Call the `start` callback to let the actor bind its `Signal`
+        self.actor_do(index, Actor::start)
+            .context("failed to start")?;
 
-    pub(crate) fn signal(&self, index: Index) -> Signal {
-        self.receiver.signal(index)
+        Ok(())
     }
 
     /// Process all pending actors, until none are left pending.
     #[instrument("World::run_until_idle", level = "debug", skip_all)]
     pub fn run_until_idle(&mut self) -> Result<(), ProcessError> {
         while let Some(index) = self.receiver.next()? {
-            self.process(index).context("failed to process")?;
+            self.actor_do(index, Actor::process)
+                .context("failed to process")?;
         }
 
         Ok(())
     }
 
-    fn process(&mut self, index: Index) -> Result<(), Error> {
+    fn actor_do<F>(&mut self, index: Index, f: F) -> Result<(), Error>
+    where
+        F: FnOnce(&mut dyn Actor, &mut Context) -> Result<(), Error>,
+    {
         // Borrow the actor
         let node = self.actors.get_mut(index).context("failed to find actor")?;
         let mut actor = node.slot.take().context("actor unavailable")?;
@@ -70,7 +78,7 @@ impl World {
         let mut ctx = Context::actor(self, index);
 
         // Let the actor's implementation process
-        let result = actor.process(&mut ctx);
+        let result = f(actor.as_mut(), &mut ctx);
 
         // Check if processing failed
         let stop = match result {
@@ -93,7 +101,8 @@ impl World {
 
         // If the actor requested to stop, stop it
         if stop {
-            self.stop(index).context("failed to stop actor")?;
+            self.stop(index)
+                .context("failed to stop actor after error")?;
         }
 
         Ok(())

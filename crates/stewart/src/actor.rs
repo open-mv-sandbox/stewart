@@ -4,6 +4,13 @@ use crate::Context;
 
 /// Actor processing implementation trait.
 pub trait Actor: 'static {
+    /// Perform start operations when the actor started in a `World`.
+    ///
+    /// This is useful to receive the `Signal` for this actor.
+    fn start(&mut self, _ctx: &mut Context) -> Result<(), Error> {
+        Ok(())
+    }
+
     /// Perform a processing step.
     ///
     /// This function can return `Err` to signal a fatal error to the system.

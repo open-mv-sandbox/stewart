@@ -101,19 +101,8 @@ mod hello_service {
     pub fn start(world: &mut World, name: String) -> Result<Sender<protocol::Request>, Error> {
         event!(Level::INFO, "starting");
 
-        // Mailboxes let you send message around
-        let (mailbox, sender) = mailbox();
-
-        // Create the actor in the world
-        let actor = Service {
-            name,
-            mailbox: mailbox.clone(),
-        };
-        let signal = world.create("hello", actor);
-
-        // To wake up our actor when a message gets sent, register it with the mailbox for
-        // notification
-        mailbox.signal(signal);
+        let (actor, sender) = Service::new(name);
+        world.create("hello", actor)?;
 
         Ok(sender)
     }
@@ -126,7 +115,30 @@ mod hello_service {
         mailbox: Mailbox<protocol::Request>,
     }
 
+    impl Service {
+        fn new(name: String) -> (Self, Sender<protocol::Request>) {
+            // Mailboxes let you send message around
+            let (mailbox, sender) = mailbox();
+
+            // Create the actor in the world
+            let actor = Service {
+                name,
+                mailbox: mailbox.clone(),
+            };
+
+            (actor, sender)
+        }
+    }
+
     impl Actor for Service {
+        fn start(&mut self, ctx: &mut Context) -> Result<(), Error> {
+            // To wake up our actor when a message gets sent, register it with the mailbox for
+            // notification
+            self.mailbox.signal(ctx.signal());
+
+            Ok(())
+        }
+
         fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
