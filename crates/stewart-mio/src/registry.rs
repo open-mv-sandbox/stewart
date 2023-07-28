@@ -20,12 +20,15 @@ pub struct Registry {
 }
 
 impl Registry {
-    pub(crate) fn new(poll: Poll) -> Self {
-        Self {
+    pub fn new() -> Result<Self, Error> {
+        let poll = Poll::new()?;
+
+        let value = Self {
             poll: RefCell::new(poll),
             next_token: AtomicUsize::new(0),
             ready_senders: Default::default(),
-        }
+        };
+        Ok(value)
     }
 
     pub(crate) fn poll(&self, events: &mut Events) -> Result<(), Error> {

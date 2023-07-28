@@ -1,44 +1,46 @@
-use std::{fs, sync::Arc};
+use std::sync::Arc;
 
-use anyhow::{Context, Error};
+use anyhow::Error;
 use quinn_proto::{Endpoint, EndpointConfig, ServerConfig};
-use tracing::{event, Level};
+use rustls::{Certificate, PrivateKey};
+use stewart::{Actor, Context, World};
 
-pub const ALPN_QUIC_HTTP: &[&[u8]] = &[b"hq-29"];
-
-pub fn endpoint() -> Result<(), Error> {
-    // Load key
-    let (cert, key) = generate_cert()?;
-    let cert = rustls::Certificate(cert);
-    let key = rustls::PrivateKey(key);
-
-    // Create crypto backend
-    let certs = vec![cert];
-    let crypto = rustls::ServerConfig::builder()
-        .with_safe_defaults()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)?;
-
-    // Configure and create protocol endpoint
-    let config = EndpointConfig::default();
-    let server_config = ServerConfig::with_crypto(Arc::new(crypto));
-    let _endpoint = Endpoint::new(Arc::new(config), Some(Arc::new(server_config)), false);
+pub fn endpoint(
+    world: &mut World,
+    certificate: Certificate,
+    private_key: PrivateKey,
+) -> Result<(), Error> {
+    let actor = Service::new(certificate, private_key)?;
+    world.insert("quic-endpoint", actor)?;
 
     Ok(())
 }
 
-fn generate_cert() -> Result<(Vec<u8>, Vec<u8>), Error> {
-    // TODO: Hacky temporary function
+struct Service {
+    endpoint: Endpoint,
+}
 
-    event!(Level::WARN, "generating self-signed certificate");
+impl Service {
+    fn new(certificate: Certificate, private_key: PrivateKey) -> Result<Self, Error> {
+        // Create crypto backend
+        let certs = vec![certificate];
+        let crypto = rustls::ServerConfig::builder()
+            .with_safe_defaults()
+            .with_no_client_auth()
+            .with_single_cert(certs, private_key)?;
 
-    let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-    let key = cert.serialize_private_key_der();
-    let cert = cert.serialize_der().unwrap();
+        // Configure and create protocol endpoint
+        let config = EndpointConfig::default();
+        let server_config = ServerConfig::with_crypto(Arc::new(crypto));
+        let endpoint = Endpoint::new(Arc::new(config), Some(Arc::new(server_config)), false);
 
-    // Dump key where the client can find it
-    fs::write("./target/example-cert", &cert).context("failed to dump cert")?;
-    fs::write("./target/example-key", &key).context("failed to dump key")?;
+        let value = Service { endpoint };
+        Ok(value)
+    }
+}
 
-    Ok((cert, key))
+impl Actor for Service {
+    fn process(&mut self, _ctx: &mut Context) -> Result<(), Error> {
+        Ok(())
+    }
 }

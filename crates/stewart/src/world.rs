@@ -22,11 +22,11 @@ impl World {
         self.receiver.signal(index)
     }
 
-    /// Create a new actor.
+    /// Insert an actor into the world.
     ///
     /// The given `name` will be used in logging.
     #[instrument("World::create", level = "debug", skip_all)]
-    pub fn create<A>(&mut self, name: &'static str, actor: A) -> Result<(), Error>
+    pub fn insert<A>(&mut self, name: &'static str, actor: A) -> Result<(), Error>
     where
         A: Actor,
     {

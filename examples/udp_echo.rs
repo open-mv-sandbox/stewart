@@ -13,17 +13,14 @@ use tracing::{event, Level};
 fn main() -> Result<(), Error> {
     utils::init_logging();
 
-    stewart_mio::run_event_loop(init)?;
+    let mut world = World::default();
+    let registry = Rc::new(Registry::new()?);
 
-    Ok(())
-}
-
-fn init(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
     // Start the actor
-    let actor = EchoExample::new(world, registry)?;
+    let actor = Service::new(&mut world, &registry)?;
     let server_addr = actor.server.local_addr();
     let client_send = actor.client.send().clone();
-    world.create("echo-example", actor)?;
+    world.insert("echo-example", actor)?;
 
     // Send a message to be echo'd
     let packet = udp::Packet {
@@ -40,15 +37,18 @@ fn init(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
     let message = udp::Message::Send(packet);
     client_send.send(message)?;
 
+    // Run the event loop
+    stewart_mio::run_event_loop(&registry)?;
+
     Ok(())
 }
 
-struct EchoExample {
+struct Service {
     server: SocketInfo,
     client: SocketInfo,
 }
 
-impl EchoExample {
+impl Service {
     pub fn new(world: &mut World, registry: &Rc<Registry>) -> Result<Self, Error> {
         // Start the listen port
         let server = udp::bind(world, registry.clone(), "0.0.0.0:1234".parse()?)?;
@@ -58,16 +58,15 @@ impl EchoExample {
         let client = udp::bind(world, registry.clone(), "0.0.0.0:0".parse()?)?;
         event!(Level::INFO, addr = ?client.local_addr(), "sending");
 
-        let actor = EchoExample { server, client };
-
+        let actor = Service { server, client };
         Ok(actor)
     }
 }
 
-impl Actor for EchoExample {
+impl Actor for Service {
     fn start(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        self.server.recv().signal(ctx.signal());
-        self.client.recv().signal(ctx.signal());
+        self.server.recv().set_signal(ctx.signal());
+        self.client.recv().set_signal(ctx.signal());
 
         Ok(())
     }

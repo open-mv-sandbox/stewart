@@ -12,6 +12,4 @@ anyhow.workspace = true
 quinn-proto.workspace = true
 rustls.workspace = true
 tracing.workspace = true
-
-# TODO: This needs to be moved out of this crate at least
-rcgen.workspace = true
+stewart.workspace = true

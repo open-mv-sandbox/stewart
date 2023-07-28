@@ -51,7 +51,7 @@ impl<M> Mailbox<M> {
     /// Set the `Signal` to be sent when this mailbox receives a message.
     ///
     /// Only one signal can be set at a time, setting this will remove the previous value.
-    pub fn signal(&self, signal: Signal) {
+    pub fn set_signal(&self, signal: Signal) {
         self.inner.borrow_mut().notify = Some(signal);
     }
 

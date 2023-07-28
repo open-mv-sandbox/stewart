@@ -10,7 +10,7 @@ use thunderdome::{Arena, Index};
 use tracing::{event, instrument, Level};
 
 #[derive(Default)]
-struct ScheduleBackend {
+struct SignalBackend {
     state: Arena<bool>,
     queue: VecDeque<Index>,
 }
@@ -18,14 +18,14 @@ struct ScheduleBackend {
 /// Sends a signal to schedule an actor for processing in a `World`.
 #[derive(Clone)]
 pub struct Signal {
-    backend: Weak<RefCell<ScheduleBackend>>,
+    backend: Weak<RefCell<SignalBackend>>,
     index: Index,
 }
 
 impl Signal {
     /// Send the signal.
     #[instrument("Signal::notify", level = "debug", skip_all)]
-    pub fn send(&self) -> Result<(), SignalError> {
+    pub fn send(&self) -> Result<(), SendError> {
         event!(Level::DEBUG, "notifying actor");
 
         let backend = self.backend.upgrade().context("world no longer exists")?;
@@ -33,7 +33,7 @@ impl Signal {
 
         // Check actor exists
         let Some(state) = backend.state.get_mut(self.index) else {
-            return Err(anyhow!("attempted to schedule actor that does not exist").into());
+            return Err(anyhow!("attempted to signal actor that does not exist").into());
         };
 
         // Don't double-schedule
@@ -52,7 +52,7 @@ impl Signal {
 
 #[derive(Default)]
 pub struct SignalReceiver {
-    backend: Rc<RefCell<ScheduleBackend>>,
+    backend: Rc<RefCell<SignalBackend>>,
 }
 
 impl SignalReceiver {
@@ -102,7 +102,7 @@ impl SignalReceiver {
 /// Error while sending signal.
 #[derive(Error, Debug)]
 #[error("sending signal failed")]
-pub struct SignalError {
+pub struct SendError {
     #[from]
     source: Error,
 }

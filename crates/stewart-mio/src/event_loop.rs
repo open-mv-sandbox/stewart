@@ -1,33 +1,23 @@
 use std::rc::Rc;
 
 use anyhow::Error;
-use mio::{event::Event, Events, Poll};
+use mio::{event::Event, Events};
 use stewart::World;
 use tracing::{event, instrument, Level};
 
 use crate::{registry::Ready, Registry};
 
 #[instrument("mio-event-loop", skip_all)]
-pub fn run_event_loop<I>(init: I) -> Result<(), Error>
-where
-    I: FnOnce(&mut World, &Rc<Registry>) -> Result<(), Error>,
-{
+pub fn run_event_loop(registry: &Rc<Registry>) -> Result<(), Error> {
     // Set up the local world
     let mut world = World::default();
-
-    // Initialize mio context
-    let poll = Poll::new()?;
-    let registry = Rc::new(Registry::new(poll));
-
-    // User init
-    init(&mut world, &registry)?;
 
     // Process pending messages raised from initialization
     event!(Level::TRACE, "processing init messages");
     world.run_until_idle()?;
 
     // Run the inner mio loop
-    run_poll_loop(&mut world, &registry)?;
+    run_poll_loop(&mut world, registry)?;
 
     Ok(())
 }

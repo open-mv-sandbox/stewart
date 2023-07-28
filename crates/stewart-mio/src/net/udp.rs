@@ -47,13 +47,13 @@ pub fn bind(
     registry: Rc<Registry>,
     addr: SocketAddr,
 ) -> Result<SocketInfo, Error> {
-    let (actor, info) = Socket::new(registry, addr)?;
-    world.create("udp-socket", actor)?;
+    let (actor, info) = SocketService::new(registry, addr)?;
+    world.insert("udp-socket", actor)?;
 
     Ok(info)
 }
 
-struct Socket {
+struct SocketService {
     send: Mailbox<Message>,
     recv: Sender<Packet>,
     ready: Mailbox<Ready>,
@@ -66,7 +66,7 @@ struct Socket {
     queue: VecDeque<Packet>,
 }
 
-impl Socket {
+impl SocketService {
     fn new(registry: Rc<Registry>, addr: SocketAddr) -> Result<(Self, SocketInfo), Error> {
         let (recv_mailbox, recv_sender) = mailbox();
         let (send_mailbox, send_sender) = mailbox();
@@ -80,7 +80,7 @@ impl Socket {
         // Register the socket for ready events
         registry.register(&mut socket, token, Interest::READABLE, ready_sender)?;
 
-        let actor = Socket {
+        let actor = SocketService {
             send: send_mailbox.clone(),
             recv: recv_sender,
             ready: ready.clone(),
@@ -102,10 +102,10 @@ impl Socket {
     }
 }
 
-impl Actor for Socket {
+impl Actor for SocketService {
     fn start(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        self.send.signal(ctx.signal());
-        self.ready.signal(ctx.signal());
+        self.send.set_signal(ctx.signal());
+        self.ready.set_signal(ctx.signal());
 
         Ok(())
     }
@@ -118,7 +118,7 @@ impl Actor for Socket {
     }
 }
 
-impl Socket {
+impl SocketService {
     fn poll_mailbox(&mut self, ctx: &mut Context) -> Result<(), Error> {
         while let Some(message) = self.send.recv() {
             match message {
@@ -243,7 +243,7 @@ impl Socket {
     }
 }
 
-impl Drop for Socket {
+impl Drop for SocketService {
     fn drop(&mut self) {
         // Cleanup the current socket from the registry
         let result = self.registry.deregister(&mut self.socket);

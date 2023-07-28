@@ -102,7 +102,7 @@ mod hello_service {
         event!(Level::INFO, "starting");
 
         let (actor, sender) = Service::new(name);
-        world.create("hello", actor)?;
+        world.insert("hello", actor)?;
 
         Ok(sender)
     }
@@ -134,7 +134,7 @@ mod hello_service {
         fn start(&mut self, ctx: &mut Context) -> Result<(), Error> {
             // To wake up our actor when a message gets sent, register it with the mailbox for
             // notification
-            self.mailbox.signal(ctx.signal());
+            self.mailbox.set_signal(ctx.signal());
 
             Ok(())
         }
