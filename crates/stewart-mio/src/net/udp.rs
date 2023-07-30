@@ -131,7 +131,7 @@ impl Service {
     }
 
     fn on_message_packet(&mut self, packet: Packet) -> Result<(), Error> {
-        event!(Level::DEBUG, peer = ?packet.peer, "received outgoing packet");
+        event!(Level::TRACE, peer = ?packet.peer, "received outgoing packet");
 
         // Queue outgoing packet
         let should_register = self.queue.is_empty();
@@ -194,7 +194,7 @@ impl Service {
             }
         };
 
-        event!(Level::DEBUG, ?peer, "received incoming packet");
+        event!(Level::TRACE, ?peer, "received incoming packet");
 
         // Send the packet to the listener
         let data = self.buffer[..size].to_vec();
@@ -236,7 +236,7 @@ impl Service {
         }
 
         // Remove the packet we've sent
-        event!(Level::DEBUG, peer = ?packet.peer, "sent outgoing packet");
+        event!(Level::TRACE, peer = ?packet.peer, "sent outgoing packet");
         self.queue.pop_front();
 
         Ok(true)
