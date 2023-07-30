@@ -4,10 +4,10 @@ use crate::Context;
 
 /// Actor processing implementation trait.
 pub trait Actor: 'static {
-    /// Perform start operations when the actor started in a `World`.
+    /// Called when an actor is inserted into a `World`.
     ///
     /// This is useful to receive the `Signal` for this actor.
-    fn start(&mut self, _ctx: &mut Context) -> Result<(), Error> {
+    fn register(&mut self, _ctx: &mut Context) -> Result<(), Error> {
         Ok(())
     }
 

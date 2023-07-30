@@ -8,16 +8,13 @@ use tracing::{event, instrument, Level};
 use crate::{registry::Ready, Registry};
 
 #[instrument("mio-event-loop", skip_all)]
-pub fn run_event_loop(registry: &Rc<Registry>) -> Result<(), Error> {
-    // Set up the local world
-    let mut world = World::default();
-
+pub fn run_event_loop(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
     // Process pending messages raised from initialization
     event!(Level::TRACE, "processing init messages");
     world.run_until_idle()?;
 
     // Run the inner mio loop
-    run_poll_loop(&mut world, registry)?;
+    run_poll_loop(world, registry)?;
 
     Ok(())
 }

@@ -1,6 +1,6 @@
 [package]
 name = "stewart-quic"
-version = "0.1.0"
+version = "0.1.0-dev"
 edition = "2021"
 description = "QUIC implementation for stewart, based on quinn-proto"
 readme = "../../README.md"
@@ -13,3 +13,5 @@ quinn-proto.workspace = true
 rustls.workspace = true
 tracing.workspace = true
 stewart.workspace = true
+stewart-message.workspace = true
+stewart-mio.workspace = true

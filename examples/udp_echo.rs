@@ -38,7 +38,7 @@ fn main() -> Result<(), Error> {
     client_send.send(message)?;
 
     // Run the event loop
-    stewart_mio::run_event_loop(&registry)?;
+    stewart_mio::run_event_loop(&mut world, &registry)?;
 
     Ok(())
 }
@@ -64,7 +64,7 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn start(&mut self, ctx: &mut Context) -> Result<(), Error> {
+    fn register(&mut self, ctx: &mut Context) -> Result<(), Error> {
         self.server.recv().set_signal(ctx.signal());
         self.client.recv().set_signal(ctx.signal());
 

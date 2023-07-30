@@ -9,6 +9,9 @@ use anyhow::{Context as _, Error};
 use mio::{event::Source, Events, Interest, Poll, Token};
 use stewart_message::Sender;
 
+// TODO: We probably sohuld have a public registry wrapper that includes Rc, just like the message
+// crate does.
+
 /// Shared mio context registry.
 ///
 /// Actors can use an instance of this registry to register ready events.

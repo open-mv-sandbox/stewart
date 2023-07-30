@@ -14,11 +14,13 @@ fn main() -> Result<(), Error> {
     let mut world = World::default();
     let registry = Rc::new(Registry::new()?);
 
+    // Set up the QUIC server
     let (certificate, private_key) = generate_certificate()?;
-    stewart_quic::endpoint(&mut world, certificate, private_key)?;
+    let addr = "0.0.0.0:1234".parse()?;
+    stewart_quic::endpoint(&mut world, registry.clone(), addr, certificate, private_key)?;
 
     // Run the event loop
-    stewart_mio::run_event_loop(&registry)?;
+    stewart_mio::run_event_loop(&mut world, &registry)?;
 
     Ok(())
 }

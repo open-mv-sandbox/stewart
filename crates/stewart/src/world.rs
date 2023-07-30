@@ -43,7 +43,7 @@ impl World {
         self.receiver.register(index);
 
         // Call the `start` callback to let the actor bind its `Signal`
-        self.actor_do(index, Actor::start)
+        self.actor_do(index, Actor::register)
             .context("failed to start")?;
 
         Ok(())

@@ -131,7 +131,7 @@ mod hello_service {
     }
 
     impl Actor for Service {
-        fn start(&mut self, ctx: &mut Context) -> Result<(), Error> {
+        fn register(&mut self, ctx: &mut Context) -> Result<(), Error> {
             // To wake up our actor when a message gets sent, register it with the mailbox for
             // notification
             self.mailbox.set_signal(ctx.signal());

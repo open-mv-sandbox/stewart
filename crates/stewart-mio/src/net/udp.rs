@@ -47,13 +47,13 @@ pub fn bind(
     registry: Rc<Registry>,
     addr: SocketAddr,
 ) -> Result<SocketInfo, Error> {
-    let (actor, info) = SocketService::new(registry, addr)?;
+    let (actor, info) = Service::new(registry, addr)?;
     world.insert("udp-socket", actor)?;
 
     Ok(info)
 }
 
-struct SocketService {
+struct Service {
     send: Mailbox<Message>,
     recv: Sender<Packet>,
     ready: Mailbox<Ready>,
@@ -66,7 +66,7 @@ struct SocketService {
     queue: VecDeque<Packet>,
 }
 
-impl SocketService {
+impl Service {
     fn new(registry: Rc<Registry>, addr: SocketAddr) -> Result<(Self, SocketInfo), Error> {
         let (recv_mailbox, recv_sender) = mailbox();
         let (send_mailbox, send_sender) = mailbox();
@@ -80,7 +80,7 @@ impl SocketService {
         // Register the socket for ready events
         registry.register(&mut socket, token, Interest::READABLE, ready_sender)?;
 
-        let actor = SocketService {
+        let actor = Service {
             send: send_mailbox.clone(),
             recv: recv_sender,
             ready: ready.clone(),
@@ -102,8 +102,8 @@ impl SocketService {
     }
 }
 
-impl Actor for SocketService {
-    fn start(&mut self, ctx: &mut Context) -> Result<(), Error> {
+impl Actor for Service {
+    fn register(&mut self, ctx: &mut Context) -> Result<(), Error> {
         self.send.set_signal(ctx.signal());
         self.ready.set_signal(ctx.signal());
 
@@ -118,7 +118,7 @@ impl Actor for SocketService {
     }
 }
 
-impl SocketService {
+impl Service {
     fn poll_mailbox(&mut self, ctx: &mut Context) -> Result<(), Error> {
         while let Some(message) = self.send.recv() {
             match message {
@@ -243,8 +243,10 @@ impl SocketService {
     }
 }
 
-impl Drop for SocketService {
+impl Drop for Service {
     fn drop(&mut self) {
+        event!(Level::DEBUG, "dropping socket");
+
         // Cleanup the current socket from the registry
         let result = self.registry.deregister(&mut self.socket);
         if let Err(error) = result {
