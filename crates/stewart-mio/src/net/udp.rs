@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, io::ErrorKind, net::SocketAddr, rc::Rc};
+use std::{collections::VecDeque, net::SocketAddr, rc::Rc, time::Instant};
 
 use anyhow::Error;
 use mio::{Interest, Token};
@@ -6,34 +6,41 @@ use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
 use tracing::{event, instrument, Level};
 
-use crate::{registry::Ready, Registry};
+use crate::{net::check_io, registry::Ready, Registry};
 
-pub enum Message {
+pub enum Action {
     /// Send a packet to a peer.
-    Send(Packet),
+    Send(SendAction),
     /// Close and stop the socket.
     Close,
 }
 
 #[derive(Debug)]
-pub struct Packet {
-    pub peer: SocketAddr,
+pub struct SendAction {
+    pub remote: SocketAddr,
     pub data: Vec<u8>,
 }
 
-pub struct SocketInfo {
-    send: Sender<Message>,
-    recv: Mailbox<Packet>,
+#[derive(Debug)]
+pub struct RecvEvent {
+    pub remote: SocketAddr,
+    pub arrived: Instant,
+    pub data: Vec<u8>,
+}
+
+pub struct Socket {
+    sender: Sender<Action>,
+    events: Mailbox<RecvEvent>,
     local_addr: SocketAddr,
 }
 
-impl SocketInfo {
-    pub fn send(&self) -> &Sender<Message> {
-        &self.send
+impl Socket {
+    pub fn sender(&self) -> &Sender<Action> {
+        &self.sender
     }
 
-    pub fn recv(&self) -> &Mailbox<Packet> {
-        &self.recv
+    pub fn events(&self) -> &Mailbox<RecvEvent> {
+        &self.events
     }
 
     pub fn local_addr(&self) -> SocketAddr {
@@ -42,20 +49,16 @@ impl SocketInfo {
 }
 
 #[instrument("udp::bind", skip_all)]
-pub fn bind(
-    world: &mut World,
-    registry: Rc<Registry>,
-    addr: SocketAddr,
-) -> Result<SocketInfo, Error> {
-    let (actor, info) = Service::new(registry, addr)?;
+pub fn bind(world: &mut World, registry: Rc<Registry>, addr: SocketAddr) -> Result<Socket, Error> {
+    let (actor, socket) = Service::new(registry, addr)?;
     world.insert("udp-socket", actor)?;
 
-    Ok(info)
+    Ok(socket)
 }
 
 struct Service {
-    send: Mailbox<Message>,
-    recv: Sender<Packet>,
+    send: Mailbox<Action>,
+    events: Sender<RecvEvent>,
     ready: Mailbox<Ready>,
 
     registry: Rc<Registry>,
@@ -63,11 +66,11 @@ struct Service {
     token: Token,
 
     buffer: Vec<u8>,
-    queue: VecDeque<Packet>,
+    queue: VecDeque<SendAction>,
 }
 
 impl Service {
-    fn new(registry: Rc<Registry>, addr: SocketAddr) -> Result<(Self, SocketInfo), Error> {
+    fn new(registry: Rc<Registry>, addr: SocketAddr) -> Result<(Self, Socket), Error> {
         let (recv_mailbox, recv_sender) = mailbox();
         let (send_mailbox, send_sender) = mailbox();
         let (ready, ready_sender) = mailbox();
@@ -80,9 +83,9 @@ impl Service {
         // Register the socket for ready events
         registry.register(&mut socket, token, Interest::READABLE, ready_sender)?;
 
-        let actor = Service {
+        let value = Self {
             send: send_mailbox.clone(),
-            recv: recv_sender,
+            events: recv_sender,
             ready: ready.clone(),
 
             registry,
@@ -93,12 +96,12 @@ impl Service {
             buffer: vec![0; 65536],
             queue: VecDeque::new(),
         };
-        let info = SocketInfo {
-            send: send_sender,
-            recv: recv_mailbox,
+        let socket = Socket {
+            sender: send_sender,
+            events: recv_mailbox,
             local_addr,
         };
-        Ok((actor, info))
+        Ok((value, socket))
     }
 }
 
@@ -122,16 +125,16 @@ impl Service {
     fn poll_mailbox(&mut self, ctx: &mut Context) -> Result<(), Error> {
         while let Some(message) = self.send.recv() {
             match message {
-                Message::Send(packet) => self.on_message_packet(packet)?,
-                Message::Close => ctx.set_stop(),
+                Action::Send(packet) => self.on_message_send(packet)?,
+                Action::Close => ctx.set_stop(),
             }
         }
 
         Ok(())
     }
 
-    fn on_message_packet(&mut self, packet: Packet) -> Result<(), Error> {
-        event!(Level::TRACE, peer = ?packet.peer, "received outgoing packet");
+    fn on_message_send(&mut self, packet: SendAction) -> Result<(), Error> {
+        event!(Level::TRACE, peer = ?packet.remote, "received outgoing packet");
 
         // Queue outgoing packet
         let should_register = self.queue.is_empty();
@@ -180,26 +183,23 @@ impl Service {
     fn try_recv(&mut self) -> Result<bool, Error> {
         // Attempt to receive packet
         let result = self.socket.recv_from(&mut self.buffer);
-
-        // Check result
-        let (size, peer) = match result {
-            Ok(value) => value,
-            Err(error) => {
-                // WouldBlock just means we've run out of things to handle
-                return if error.kind() == ErrorKind::WouldBlock {
-                    Ok(false)
-                } else {
-                    Err(error.into())
-                };
-            }
+        let Some((size, remote)) = check_io(result)? else {
+            return Ok(false)
         };
 
-        event!(Level::TRACE, ?peer, "received incoming packet");
+        event!(Level::TRACE, ?remote, "received incoming packet");
+
+        // Track time of arrival
+        let arrived = Instant::now();
 
         // Send the packet to the listener
         let data = self.buffer[..size].to_vec();
-        let packet = Packet { peer, data };
-        self.recv.send(packet)?;
+        let packet = RecvEvent {
+            remote,
+            arrived,
+            data,
+        };
+        self.events.send(packet)?;
 
         Ok(true)
     }
@@ -220,23 +220,18 @@ impl Service {
 
     fn try_send(&mut self) -> Result<bool, Error> {
         // Check if we have anything to send
-        let Some(packet) = self.queue.front() else { return Ok(false) };
+        let Some(packet) = self.queue.front() else {
+            return Ok(false)
+        };
 
         // Attempt to send it
-        let result = self.socket.send_to(&packet.data, packet.peer);
-
-        // Check result
-        if let Err(error) = result {
-            // WouldBlock just means we've run out of things to handle
-            return if error.kind() == ErrorKind::WouldBlock {
-                Ok(false)
-            } else {
-                Err(error.into())
-            };
-        }
+        let result = self.socket.send_to(&packet.data, packet.remote);
+        let Some(_) = check_io(result)? else {
+            return Ok(false)
+        };
 
         // Remove the packet we've sent
-        event!(Level::TRACE, peer = ?packet.peer, "sent outgoing packet");
+        event!(Level::TRACE, peer = ?packet.remote, "sent outgoing packet");
         self.queue.pop_front();
 
         Ok(true)

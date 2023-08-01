@@ -25,5 +25,9 @@ name = "quic_server"
 path = "quic_server.rs"
 
 [[example]]
+name = "tcp_echo"
+path = "tcp_echo.rs"
+
+[[example]]
 name = "udp_echo"
 path = "udp_echo.rs"

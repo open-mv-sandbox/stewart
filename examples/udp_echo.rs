@@ -4,10 +4,7 @@ use std::rc::Rc;
 
 use anyhow::Error;
 use stewart::{Actor, Context, World};
-use stewart_mio::{
-    net::udp::{self, SocketInfo},
-    Registry,
-};
+use stewart_mio::{net::udp, Registry};
 use tracing::{event, Level};
 
 fn main() -> Result<(), Error> {
@@ -19,22 +16,22 @@ fn main() -> Result<(), Error> {
     // Start the actor
     let actor = Service::new(&mut world, &registry)?;
     let server_addr = actor.server.local_addr();
-    let client_send = actor.client.send().clone();
+    let client_send = actor.client.sender().clone();
     world.insert("echo-example", actor)?;
 
     // Send a message to be echo'd
-    let packet = udp::Packet {
-        peer: server_addr,
+    let packet = udp::SendAction {
+        remote: server_addr,
         data: b"Client Packet".to_vec(),
     };
-    let message = udp::Message::Send(packet);
+    let message = udp::Action::Send(packet);
     client_send.send(message)?;
 
-    let packet = udp::Packet {
-        peer: server_addr,
+    let packet = udp::SendAction {
+        remote: server_addr,
         data: b"Somewhat Longer Packet".to_vec(),
     };
-    let message = udp::Message::Send(packet);
+    let message = udp::Action::Send(packet);
     client_send.send(message)?;
 
     // Run the event loop
@@ -44,8 +41,8 @@ fn main() -> Result<(), Error> {
 }
 
 struct Service {
-    server: SocketInfo,
-    client: SocketInfo,
+    server: udp::Socket,
+    client: udp::Socket,
 }
 
 impl Service {
@@ -65,24 +62,27 @@ impl Service {
 
 impl Actor for Service {
     fn register(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        self.server.recv().set_signal(ctx.signal());
-        self.client.recv().set_signal(ctx.signal());
+        self.server.events().set_signal(ctx.signal());
+        self.client.events().set_signal(ctx.signal());
 
         Ok(())
     }
 
     fn process(&mut self, _ctx: &mut Context) -> Result<(), Error> {
-        while let Some(mut packet) = self.server.recv().recv() {
+        while let Some(packet) = self.server.events().recv() {
             let data = std::str::from_utf8(&packet.data)?;
             event!(Level::INFO, data, "server received packet");
 
             // Echo back with a hello message
-            packet.data = format!("Hello, \"{}\"!", data).into_bytes();
-            let message = udp::Message::Send(packet);
-            self.server.send().send(message)?;
+            let packet = udp::SendAction {
+                remote: packet.remote,
+                data: format!("Hello, \"{}\"!", data).into_bytes(),
+            };
+            let message = udp::Action::Send(packet);
+            self.server.sender().send(message)?;
         }
 
-        while let Some(packet) = self.client.recv().recv() {
+        while let Some(packet) = self.client.events().recv() {
             let data = std::str::from_utf8(&packet.data)?;
             event!(Level::INFO, data, "client received packet");
         }

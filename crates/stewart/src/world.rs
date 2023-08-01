@@ -73,7 +73,7 @@ impl World {
         let _entered = span.enter();
 
         // Process the actor
-        event!(Level::DEBUG, "processing actor");
+        event!(Level::TRACE, "calling into actor");
 
         let mut ctx = Context::actor(self, index);
 
