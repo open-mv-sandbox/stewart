@@ -15,13 +15,11 @@ pub enum Action {
     Close,
 }
 
-#[derive(Debug)]
 pub struct SendAction {
     pub remote: SocketAddr,
     pub data: Vec<u8>,
 }
 
-#[derive(Debug)]
 pub struct RecvEvent {
     pub remote: SocketAddr,
     pub arrived: Instant,
@@ -78,9 +76,9 @@ impl Service {
         // Create the socket
         let mut socket = mio::net::UdpSocket::bind(addr)?;
         let local_addr = socket.local_addr()?;
-        let token = registry.token();
 
         // Register the socket for ready events
+        let token = registry.token();
         registry.register(&mut socket, token, Interest::READABLE, ready_sender)?;
 
         let value = Self {

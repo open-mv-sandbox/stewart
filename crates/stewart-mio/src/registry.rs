@@ -106,6 +106,7 @@ impl Registry {
 
 #[derive(Debug)]
 pub struct Ready {
+    pub token: Token,
     pub readable: bool,
     pub writable: bool,
 }

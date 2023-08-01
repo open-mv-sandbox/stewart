@@ -42,6 +42,7 @@ fn handle(registry: &Registry, event: &Event) -> Result<(), Error> {
     event!(Level::TRACE, "handling mio event");
 
     let ready = Ready {
+        token: event.token(),
         readable: event.is_readable(),
         writable: event.is_writable(),
     };
