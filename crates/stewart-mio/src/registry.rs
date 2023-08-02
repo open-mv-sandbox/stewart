@@ -19,6 +19,8 @@ use stewart_message::Sender;
 pub struct Registry {
     poll: RefCell<Poll>,
     next_token: AtomicUsize,
+    /// TODO: Since ready events always get 'squashed', we can manually track that in an
+    /// Rc<RefCel<_>>, instead of sending around messages.
     ready_senders: RefCell<HashMap<Token, Sender<Ready>>>,
 }
 

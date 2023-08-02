@@ -1,6 +1,11 @@
-use std::{collections::HashMap, net::SocketAddr, rc::Rc};
+use std::{
+    collections::HashMap,
+    io::{ErrorKind, Read},
+    net::SocketAddr,
+    rc::Rc,
+};
 
-use anyhow::Error;
+use anyhow::{Context as _, Error};
 use mio::{Interest, Token};
 use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
@@ -67,6 +72,8 @@ struct Service {
     listener: mio::net::TcpListener,
     listener_token: Token,
 
+    // TODO: It makes more sense to make them separate actors, this lets us handle clients and
+    // servers in the same way too.
     streams: HashMap<Uuid, mio::net::TcpStream>,
     /// Mapping for incoming ready events.
     tokens: HashMap<Token, Uuid>,
@@ -124,6 +131,9 @@ impl Actor for Service {
         while let Some(ready) = self.ready_events.pop() {
             if ready.token == self.listener_token {
                 self.on_listener_ready()?;
+            } else {
+                // This means it's one of the streams
+                self.on_stream_ready(ready)?;
             }
         }
 
@@ -174,4 +184,70 @@ impl Service {
 
         Ok(())
     }
+
+    fn on_stream_ready(&mut self, ready: Ready) -> Result<(), Error> {
+        let uuid = *self
+            .tokens
+            .get(&ready.token)
+            .context("stream token not registered")?;
+        let stream = self
+            .streams
+            .get_mut(&uuid)
+            .context("stream uuid not registered")?;
+
+        if ready.readable {
+            read_stream(stream)?;
+        }
+
+        if ready.writable {
+            // TODO
+        }
+
+        Ok(())
+    }
+}
+
+fn read_stream(stream: &mut mio::net::TcpStream) -> Result<(), Error> {
+    // TODO: Re-use buffer where possible
+    let mut closed = false;
+    let mut buffer = vec![0; 1024];
+    let mut bytes_read = 0;
+
+    loop {
+        // Attempt to receive data
+        let result = stream.read(&mut buffer[bytes_read..]);
+
+        match result {
+            Ok(len) => {
+                // Read of zero means the stream has been closed
+                if len == 0 {
+                    closed = true;
+                    break;
+                }
+
+                // Add additional read data to buffer
+                bytes_read += len;
+                if bytes_read == buffer.len() {
+                    buffer.resize(buffer.len() + 1024, 0);
+                }
+            }
+            Err(error) => match error.kind() {
+                ErrorKind::WouldBlock => break,
+                ErrorKind::Interrupted => break,
+                _ => return Err(error.into()),
+            },
+        }
+    }
+
+    // TODO: Send read data to listener
+    event!(
+        Level::WARN,
+        "received {} bytes, closed = {}",
+        bytes_read,
+        closed
+    );
+
+    // TODO: Do something with `closed`
+
+    Ok(())
 }
