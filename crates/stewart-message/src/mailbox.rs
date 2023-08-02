@@ -57,10 +57,18 @@ impl<M> Mailbox<M> {
 
     /// Get the next message, if any is available.
     ///
-    /// TODO: Consider if recv should fail if all senders are dropped, it probably should because
-    /// it's likely an error (calling actor dropped), and we want to detect errors.
-    pub fn recv(&self) -> Option<M> {
-        self.inner.borrow_mut().queue.pop_front()
+    /// Recv will fail if all senders are dropped.
+    /// This is because, all users of this mailbox being dropped probably means something has gone
+    /// wrong.
+    /// Making sure we fail if this happens prevents inconsistent behavior with dangling resources.
+    pub fn recv(&self) -> Result<Option<M>, RecvError> {
+        let count = Rc::weak_count(&self.inner);
+        if count == 0 {
+            return Err(anyhow!("all senders dropped").into());
+        }
+
+        let next = self.inner.borrow_mut().queue.pop_front();
+        Ok(next)
     }
 }
 
@@ -96,6 +104,16 @@ impl<M> Clone for Sender<M> {
             inner: self.inner.clone(),
         }
     }
+}
+
+/// Error while sending message.
+///
+/// This happens if the mailbox senders no longer exists.
+#[derive(Error, Debug)]
+#[error("receiving messages failed")]
+pub struct RecvError {
+    #[from]
+    source: Error,
 }
 
 /// Error while sending message.

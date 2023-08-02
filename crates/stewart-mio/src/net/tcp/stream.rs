@@ -69,7 +69,7 @@ impl Actor for Service {
 
     fn process(&mut self, _ctx: &mut stewart::Context) -> Result<(), Error> {
         let mut readable = false;
-        while let Some(ready) = self.ready_mailbox.recv() {
+        while let Some(ready) = self.ready_mailbox.recv()? {
             readable |= ready.readable;
         }
 

@@ -49,7 +49,7 @@ impl Actor for Service {
     }
 
     fn process(&mut self, _ctx: &mut Context) -> Result<(), Error> {
-        while let Some(_stream) = self.server_mailbox.recv() {
+        while let Some(_stream) = self.server_mailbox.recv()? {
             event!(Level::INFO, "stream accepted");
         }
 

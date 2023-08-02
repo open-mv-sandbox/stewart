@@ -72,7 +72,7 @@ impl Actor for Service {
     }
 
     fn process(&mut self, _ctx: &mut Context) -> Result<(), Error> {
-        while let Some(packet) = self.event_mailbox.recv() {
+        while let Some(packet) = self.event_mailbox.recv()? {
             event!(Level::TRACE, "received packet");
 
             // TODO: Make this part of the socket API
