@@ -26,38 +26,27 @@ pub struct RecvEvent {
     pub data: Vec<u8>,
 }
 
-pub struct Socket {
-    sender: Sender<Action>,
-    events: Mailbox<RecvEvent>,
-    local_addr: SocketAddr,
-}
-
-impl Socket {
-    pub fn sender(&self) -> &Sender<Action> {
-        &self.sender
-    }
-
-    pub fn events(&self) -> &Mailbox<RecvEvent> {
-        &self.events
-    }
-
-    pub fn local_addr(&self) -> SocketAddr {
-        self.local_addr
-    }
+pub struct SocketInfo {
+    pub local_addr: SocketAddr,
 }
 
 #[instrument("udp::bind", skip_all)]
-pub fn bind(world: &mut World, registry: Rc<Registry>, addr: SocketAddr) -> Result<Socket, Error> {
-    let (actor, socket) = Service::new(registry, addr)?;
+pub fn bind(
+    world: &mut World,
+    registry: Rc<Registry>,
+    addr: SocketAddr,
+    on_event: Sender<RecvEvent>,
+) -> Result<(Sender<Action>, SocketInfo), Error> {
+    let (actor, sender, socket) = Service::new(registry, addr, on_event)?;
     world.insert("udp-socket", actor)?;
 
-    Ok(socket)
+    Ok((sender, socket))
 }
 
 struct Service {
-    send: Mailbox<Action>,
-    events: Sender<RecvEvent>,
-    ready: Mailbox<Ready>,
+    action_mailbox: Mailbox<Action>,
+    ready_mailbox: Mailbox<Ready>,
+    on_event: Sender<RecvEvent>,
 
     registry: Rc<Registry>,
     socket: mio::net::UdpSocket,
@@ -68,9 +57,12 @@ struct Service {
 }
 
 impl Service {
-    fn new(registry: Rc<Registry>, addr: SocketAddr) -> Result<(Self, Socket), Error> {
-        let (recv_mailbox, recv_sender) = mailbox();
-        let (send_mailbox, send_sender) = mailbox();
+    fn new(
+        registry: Rc<Registry>,
+        addr: SocketAddr,
+        on_event: Sender<RecvEvent>,
+    ) -> Result<(Self, Sender<Action>, SocketInfo), Error> {
+        let (action_mailbox, action_sender) = mailbox();
         let (ready, ready_sender) = mailbox();
 
         // Create the socket
@@ -82,9 +74,9 @@ impl Service {
         registry.register(&mut socket, token, Interest::READABLE, ready_sender)?;
 
         let value = Self {
-            send: send_mailbox.clone(),
-            events: recv_sender,
-            ready: ready.clone(),
+            action_mailbox: action_mailbox.clone(),
+            ready_mailbox: ready.clone(),
+            on_event,
 
             registry,
             socket,
@@ -94,19 +86,15 @@ impl Service {
             buffer: vec![0; 65536],
             queue: VecDeque::new(),
         };
-        let socket = Socket {
-            sender: send_sender,
-            events: recv_mailbox,
-            local_addr,
-        };
-        Ok((value, socket))
+        let socket = SocketInfo { local_addr };
+        Ok((value, action_sender, socket))
     }
 }
 
 impl Actor for Service {
     fn register(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        self.send.set_signal(ctx.signal());
-        self.ready.set_signal(ctx.signal());
+        self.action_mailbox.set_signal(ctx.signal());
+        self.ready_mailbox.set_signal(ctx.signal());
 
         Ok(())
     }
@@ -121,7 +109,7 @@ impl Actor for Service {
 
 impl Service {
     fn poll_mailbox(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        while let Some(message) = self.send.recv() {
+        while let Some(message) = self.action_mailbox.recv() {
             match message {
                 Action::Send(packet) => self.on_message_send(packet)?,
                 Action::Close => ctx.set_stop(),
@@ -154,7 +142,7 @@ impl Service {
         let mut readable = false;
         let mut writable = false;
 
-        while let Some(ready) = self.ready.recv() {
+        while let Some(ready) = self.ready_mailbox.recv() {
             readable |= ready.readable;
             writable |= ready.writable;
         }
@@ -197,7 +185,7 @@ impl Service {
             arrived,
             data,
         };
-        self.events.send(packet)?;
+        self.on_event.send(packet)?;
 
         Ok(true)
     }

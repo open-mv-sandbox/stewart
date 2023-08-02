@@ -5,6 +5,7 @@ use bytes::BytesMut;
 use quinn_proto::{DatagramEvent, Endpoint, EndpointConfig, ServerConfig};
 use rustls::{Certificate, PrivateKey};
 use stewart::{Actor, Context, World};
+use stewart_message::{mailbox, Mailbox, Sender};
 use stewart_mio::{net::udp, Registry};
 use tracing::{event, Level};
 
@@ -23,7 +24,9 @@ pub fn endpoint(
 
 struct Service {
     endpoint: Endpoint,
-    socket: udp::Socket,
+    event_mailbox: Mailbox<udp::RecvEvent>,
+    #[allow(dead_code)]
+    action_sender: Sender<udp::Action>,
 }
 
 impl Service {
@@ -50,21 +53,26 @@ impl Service {
         let endpoint = Endpoint::new(Arc::new(config), Some(Arc::new(server_config)), false);
 
         // Bind the UDP socket to listen on
-        let socket = udp::bind(world, registry, addr)?;
+        let (event_mailbox, event_sender) = mailbox();
+        let (action_sender, _) = udp::bind(world, registry, addr, event_sender)?;
 
-        let value = Service { endpoint, socket };
+        let value = Service {
+            endpoint,
+            event_mailbox,
+            action_sender,
+        };
         Ok(value)
     }
 }
 
 impl Actor for Service {
     fn register(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        self.socket.events().set_signal(ctx.signal());
+        self.event_mailbox.set_signal(ctx.signal());
         Ok(())
     }
 
     fn process(&mut self, _ctx: &mut Context) -> Result<(), Error> {
-        while let Some(packet) = self.socket.events().recv() {
+        while let Some(packet) = self.event_mailbox.recv() {
             event!(Level::TRACE, "received packet");
 
             // TODO: Make this part of the socket API

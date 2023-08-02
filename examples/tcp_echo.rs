@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use anyhow::Error;
 use stewart::{Actor, Context, World};
+use stewart_message::{mailbox, Mailbox};
 use stewart_mio::{net::tcp, Registry};
 use tracing::{event, Level};
 
@@ -24,29 +25,31 @@ fn main() -> Result<(), Error> {
 }
 
 struct Service {
-    server: tcp::Listener,
+    server_mailbox: Mailbox<tcp::StreamConnectedEvent>,
 }
 
 impl Service {
     pub fn new(world: &mut World, registry: &Rc<Registry>) -> Result<Self, Error> {
-        // Start the listen port
-        let server = tcp::listen(world, registry.clone(), "127.0.0.1:1234".parse()?)?;
-        event!(Level::INFO, addr = ?server.local_addr(), "listening");
+        let (server_mailbox, on_event) = mailbox();
 
-        let actor = Service { server };
+        // Start the listen port
+        let (_server_sender, server_info) =
+            tcp::listen(world, registry.clone(), "127.0.0.1:1234".parse()?, on_event)?;
+        event!(Level::INFO, addr = ?server_info.local_addr, "listening");
+
+        let actor = Service { server_mailbox };
         Ok(actor)
     }
 }
 
 impl Actor for Service {
     fn register(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        self.server.events().set_signal(ctx.signal());
-
+        self.server_mailbox.set_signal(ctx.signal());
         Ok(())
     }
 
     fn process(&mut self, _ctx: &mut Context) -> Result<(), Error> {
-        while let Some(_stream) = self.server.events().recv() {
+        while let Some(_stream) = self.server_mailbox.recv() {
             event!(Level::INFO, "stream accepted");
         }
 

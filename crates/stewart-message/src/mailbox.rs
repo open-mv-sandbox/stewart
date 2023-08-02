@@ -56,6 +56,9 @@ impl<M> Mailbox<M> {
     }
 
     /// Get the next message, if any is available.
+    ///
+    /// TODO: Consider if recv should fail if all senders are dropped, it probably should because
+    /// it's likely an error (calling actor dropped), and we want to detect errors.
     pub fn recv(&self) -> Option<M> {
         self.inner.borrow_mut().queue.pop_front()
     }
