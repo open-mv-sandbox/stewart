@@ -61,12 +61,14 @@ impl Actor for Service {
         while let Some(stream) = self.server_mailbox.recv()? {
             event!(Level::INFO, "stream accepted");
 
+            // Send a greeting message
             let data = b"HELLO WORLD\n".to_vec();
             let action = tcp::SendAction { data };
             stream
                 .actions_sender
                 .send(tcp::StreamAction::Send(action))?;
 
+            // Keep track of the stream
             stream.event_mailbox.set_signal(ctx.signal());
             self.streams.push(stream);
         }
@@ -74,6 +76,15 @@ impl Actor for Service {
         for stream in &self.streams {
             while let Some(event) = stream.event_mailbox.recv()? {
                 event!(Level::INFO, bytes = event.data.len(), "received data");
+
+                // Reply with an echo
+                let data = std::str::from_utf8(&event.data)?;
+                let data = data.trim();
+                let packet = tcp::SendAction {
+                    data: format!("HELLO, \"{}\"!\n", data).into_bytes(),
+                };
+                let message = tcp::StreamAction::Send(packet);
+                stream.actions_sender.send(message)?;
             }
         }
 

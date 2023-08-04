@@ -111,7 +111,7 @@ impl Service {
     fn poll_mailbox(&mut self, ctx: &mut Context) -> Result<(), Error> {
         while let Some(message) = self.action_mailbox.recv()? {
             match message {
-                Action::Send(packet) => self.on_message_send(packet)?,
+                Action::Send(packet) => self.on_action_send(packet)?,
                 Action::Close => ctx.set_stop(),
             }
         }
@@ -119,7 +119,7 @@ impl Service {
         Ok(())
     }
 
-    fn on_message_send(&mut self, packet: SendAction) -> Result<(), Error> {
+    fn on_action_send(&mut self, packet: SendAction) -> Result<(), Error> {
         event!(Level::TRACE, peer = ?packet.remote, "received outgoing packet");
 
         // Queue outgoing packet
@@ -173,7 +173,7 @@ impl Service {
             return Ok(false)
         };
 
-        event!(Level::TRACE, ?remote, "received incoming packet");
+        event!(Level::TRACE, ?remote, "received incoming");
 
         // Track time of arrival
         let arrived = Instant::now();
@@ -217,7 +217,7 @@ impl Service {
         };
 
         // Remove the packet we've sent
-        event!(Level::TRACE, peer = ?packet.remote, "sent outgoing packet");
+        event!(Level::TRACE, peer = ?packet.remote, "sent outgoing");
         self.queue.pop_front();
 
         Ok(true)

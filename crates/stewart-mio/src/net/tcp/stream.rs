@@ -1,10 +1,11 @@
 use std::{
-    io::{ErrorKind, Read},
+    collections::VecDeque,
+    io::{ErrorKind, Read, Write},
     rc::Rc,
 };
 
 use anyhow::Error;
-use mio::Interest;
+use mio::{Interest, Token};
 use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
 use tracing::{event, Level};
@@ -43,7 +44,11 @@ struct Service {
     ready_mailbox: Mailbox<Ready>,
     on_event: Sender<RecvEvent>,
 
+    registry: Rc<Registry>,
     stream: mio::net::TcpStream,
+    token: Token,
+
+    queue: VecDeque<Vec<u8>>,
 }
 
 impl Service {
@@ -66,7 +71,11 @@ impl Service {
             ready_mailbox,
             on_event,
 
+            registry,
             stream,
+            token,
+
+            queue: VecDeque::new(),
         };
         Ok((value, sender))
     }
@@ -80,20 +89,12 @@ impl Actor for Service {
     }
 
     fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        // Handle ready
-        let mut readable = false;
-        while let Some(ready) = self.ready_mailbox.recv()? {
-            readable |= ready.readable;
-        }
-
-        if readable {
-            self.on_ready_readable(ctx)?;
-        }
+        self.poll_ready(ctx)?;
 
         // Handle actions
         while let Some(action) = self.action_mailbox.recv()? {
             match action {
-                StreamAction::Send(action) => self.on_action_send(action),
+                StreamAction::Send(action) => self.on_action_send(action)?,
                 StreamAction::Close => ctx.set_stop(),
             }
         }
@@ -103,6 +104,26 @@ impl Actor for Service {
 }
 
 impl Service {
+    fn poll_ready(&mut self, ctx: &mut Context) -> Result<(), Error> {
+        // Handle ready
+        let mut readable = false;
+        let mut writable = false;
+        while let Some(ready) = self.ready_mailbox.recv()? {
+            readable |= ready.readable;
+            writable |= ready.writable;
+        }
+
+        if readable {
+            self.on_ready_readable(ctx)?;
+        }
+
+        if writable {
+            self.on_ready_writable()?;
+        }
+
+        Ok(())
+    }
+
     fn on_ready_readable(&mut self, ctx: &mut Context) -> Result<(), Error> {
         // TODO: Re-use buffer where possible
         let mut closed = false;
@@ -137,7 +158,7 @@ impl Service {
 
         // Send read data to listener
         if bytes_read != 0 {
-            event!(Level::TRACE, count = bytes_read, "received data");
+            event!(Level::TRACE, count = bytes_read, "received incoming");
             let data = buffer[..bytes_read].to_vec();
             let event = RecvEvent { data };
             self.on_event.send(event)?;
@@ -153,8 +174,72 @@ impl Service {
         Ok(())
     }
 
-    fn on_action_send(&mut self, _action: SendAction) {
-        event!(Level::WARN, "attempted to send, not implemented");
-        // TODO
+    fn on_ready_writable(&mut self) -> Result<(), Error> {
+        event!(Level::TRACE, "polling write");
+
+        while self.try_send()? {}
+
+        // If we have nothing left, remove the writable registry
+        if self.queue.is_empty() {
+            self.registry
+                .reregister(&mut self.stream, self.token, Interest::READABLE)?;
+        }
+
+        Ok(())
+    }
+
+    fn try_send(&mut self) -> Result<bool, Error> {
+        // Check if we have anything to send
+        let Some(data) = self.queue.front_mut() else {
+            return Ok(false)
+        };
+
+        // Attempt to send as much as we can
+        match self.stream.write(data) {
+            Ok(count) => {
+                // We wrote data correctly, check if we wrote all of it, if not we need to truncate
+                if count < data.len() {
+                    *data = data[count..].to_vec();
+                } else {
+                    // We wrote all, no need to retain
+                    self.queue.pop_front();
+                }
+
+                Ok(true)
+            }
+            Err(error) => match error.kind() {
+                ErrorKind::WouldBlock => {
+                    // We got interrupted, and we can't retry
+                    Ok(false)
+                }
+                ErrorKind::Interrupted => {
+                    // We got interrupted, but we can retry
+                    Ok(true)
+                }
+                _ => {
+                    // Fatal error
+                    Err(error.into())
+                }
+            },
+        }
+    }
+
+    fn on_action_send(&mut self, action: SendAction) -> Result<(), Error> {
+        event!(Level::INFO, "received outgoing");
+
+        // Queue outgoing packet
+        let should_register = self.queue.is_empty();
+        self.queue.push_back(action.data);
+
+        // Reregister so we can receive write events
+        if should_register {
+            self.registry.reregister(
+                &mut self.stream,
+                self.token,
+                Interest::READABLE | Interest::WRITABLE,
+            )?;
+        }
+
+        Ok(())
     }
 }

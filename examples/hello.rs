@@ -23,7 +23,9 @@ fn main() -> Result<(), Error> {
     // Mailboxes don't need to be associated with an actor.
     let (mailbox, sender) = mailbox();
 
-    let action = hello::Action::Greet("World".to_string());
+    let action = hello::Action::Greet {
+        name: "World".to_string(),
+    };
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
@@ -31,7 +33,9 @@ fn main() -> Result<(), Error> {
     };
     service.send(message)?;
 
-    let action = hello::Action::Greet("Actors".to_string());
+    let action = hello::Action::Greet {
+        name: "Actors".to_string(),
+    };
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
@@ -91,7 +95,13 @@ mod hello_service {
         }
 
         pub enum Action {
-            Greet(String),
+            Greet {
+                name: String,
+            },
+            /// It's important to send back when stop has completed, as dropping all senders
+            /// will raise errors in mailboxes.
+            /// By sending back when it's done, other actors can wait with cleaning them up
+            /// until the stop is completed.
             Stop,
         }
     }
@@ -145,8 +155,8 @@ mod hello_service {
             // Process messages on the mailbox
             while let Some(request) = self.mailbox.recv()? {
                 match request.action {
-                    protocol::Action::Greet(to) => {
-                        event!(Level::INFO, "Hello \"{}\", from {}!", to, self.name);
+                    protocol::Action::Greet { name } => {
+                        event!(Level::INFO, "Hello \"{}\", from {}!", name, self.name);
                     }
                     protocol::Action::Stop => {
                         ctx.set_stop();
@@ -158,14 +168,6 @@ mod hello_service {
             }
 
             Ok(())
-        }
-    }
-
-    impl Drop for Service {
-        fn drop(&mut self) {
-            // If you have dependency services that need to be stopped explicitly, you can do so
-            // here using `Sender`s.
-            event!(Level::INFO, "service stopping");
         }
     }
 }
