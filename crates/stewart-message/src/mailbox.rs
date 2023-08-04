@@ -62,12 +62,17 @@ impl<M> Mailbox<M> {
     /// wrong.
     /// Making sure we fail if this happens prevents inconsistent behavior with dangling resources.
     pub fn recv(&self) -> Result<Option<M>, RecvError> {
-        let count = Rc::weak_count(&self.inner);
-        if count == 0 {
-            return Err(anyhow!("all senders dropped").into());
+        // Try to get a message
+        let next = self.inner.borrow_mut().queue.pop_front();
+
+        // If we don't have a message, make sure there's senders left
+        if next.is_none() {
+            let count = Rc::weak_count(&self.inner);
+            if count == 0 {
+                return Err(anyhow!("all senders dropped").into());
+            }
         }
 
-        let next = self.inner.borrow_mut().queue.pop_front();
         Ok(next)
     }
 }
