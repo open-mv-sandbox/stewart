@@ -20,7 +20,8 @@ pub struct ListenerInfo {
     pub local_addr: SocketAddr,
 }
 
-pub struct StreamConnectedEvent {
+pub struct ConnectedEvent {
+    pub event_mailbox: Mailbox<net::tcp::RecvEvent>,
     pub actions_sender: Sender<net::tcp::StreamAction>,
 }
 
@@ -33,7 +34,7 @@ pub fn listen(
     world: &mut World,
     registry: Rc<Registry>,
     addr: SocketAddr,
-    on_event: Sender<StreamConnectedEvent>,
+    on_event: Sender<ConnectedEvent>,
 ) -> Result<(Sender<ListenerAction>, ListenerInfo), Error> {
     let (actor, actions_sender, info) = Service::new(registry, addr, on_event)?;
     world.insert("tcp-listener", actor)?;
@@ -45,7 +46,7 @@ struct Service {
     registry: Rc<Registry>,
     actions_mailbox: Mailbox<ListenerAction>,
     ready_mailbox: Mailbox<Ready>,
-    on_event: Sender<StreamConnectedEvent>,
+    on_event: Sender<ConnectedEvent>,
 
     listener: mio::net::TcpListener,
 }
@@ -54,7 +55,7 @@ impl Service {
     fn new(
         registry: Rc<Registry>,
         addr: SocketAddr,
-        on_event: Sender<StreamConnectedEvent>,
+        on_event: Sender<ConnectedEvent>,
     ) -> Result<(Self, Sender<ListenerAction>, ListenerInfo), Error> {
         let (actions_mailbox, actions_sender) = mailbox();
         let (ready_mailbox, ready_sender) = mailbox();
@@ -102,7 +103,9 @@ impl Actor for Service {
             self.on_listener_ready(ctx)?;
         }
 
-        // TODO: actions
+        while let Some(_action) = self.actions_mailbox.recv()? {
+            ctx.set_stop();
+        }
 
         Ok(())
     }
@@ -115,10 +118,15 @@ impl Service {
             event!(Level::DEBUG, ?remote_addr, "stream accepted");
 
             // Start actor
-            let actions_sender = net::tcp::stream::open(world, self.registry.clone(), stream)?;
+            let (event_mailbox, sender) = mailbox();
+            let actions_sender =
+                net::tcp::stream::open(world, self.registry.clone(), stream, sender)?;
 
             // Notify
-            let event = StreamConnectedEvent { actions_sender };
+            let event = ConnectedEvent {
+                actions_sender,
+                event_mailbox,
+            };
             self.on_event.send(event)?;
         }
 

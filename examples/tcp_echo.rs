@@ -4,8 +4,11 @@ use std::rc::Rc;
 
 use anyhow::Error;
 use stewart::{Actor, Context, World};
-use stewart_message::{mailbox, Mailbox};
-use stewart_mio::{net::tcp, Registry};
+use stewart_message::{mailbox, Mailbox, Sender};
+use stewart_mio::{
+    net::tcp::{self},
+    Registry,
+};
 use tracing::{event, Level};
 
 fn main() -> Result<(), Error> {
@@ -25,7 +28,9 @@ fn main() -> Result<(), Error> {
 }
 
 struct Service {
-    server_mailbox: Mailbox<tcp::StreamConnectedEvent>,
+    server_mailbox: Mailbox<tcp::ConnectedEvent>,
+    _server_sender: Sender<tcp::ListenerAction>,
+    streams: Vec<tcp::ConnectedEvent>,
 }
 
 impl Service {
@@ -33,11 +38,15 @@ impl Service {
         let (server_mailbox, on_event) = mailbox();
 
         // Start the listen port
-        let (_server_sender, server_info) =
+        let (server_sender, server_info) =
             tcp::listen(world, registry.clone(), "127.0.0.1:1234".parse()?, on_event)?;
         event!(Level::INFO, addr = ?server_info.local_addr, "listening");
 
-        let actor = Service { server_mailbox };
+        let actor = Service {
+            server_mailbox,
+            _server_sender: server_sender,
+            streams: Vec::new(),
+        };
         Ok(actor)
     }
 }
@@ -48,9 +57,24 @@ impl Actor for Service {
         Ok(())
     }
 
-    fn process(&mut self, _ctx: &mut Context) -> Result<(), Error> {
-        while let Some(_stream) = self.server_mailbox.recv()? {
+    fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
+        while let Some(stream) = self.server_mailbox.recv()? {
             event!(Level::INFO, "stream accepted");
+
+            let data = b"HELLO WORLD\n".to_vec();
+            let action = tcp::SendAction { data };
+            stream
+                .actions_sender
+                .send(tcp::StreamAction::Send(action))?;
+
+            stream.event_mailbox.set_signal(ctx.signal());
+            self.streams.push(stream);
+        }
+
+        for stream in &self.streams {
+            while let Some(event) = stream.event_mailbox.recv()? {
+                event!(Level::INFO, bytes = event.data.len(), "received data");
+            }
         }
 
         Ok(())
