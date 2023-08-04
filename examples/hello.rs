@@ -55,7 +55,7 @@ fn main() -> Result<(), Error> {
     world.run_until_idle()?;
 
     // We can receive messages outside actors by just checking
-    while let Some(uuid) = mailbox.recv()? {
+    while let Some(uuid) = mailbox.recv() {
         event!(Level::INFO, ?uuid, "received response");
     }
 
@@ -153,7 +153,7 @@ mod hello_service {
             event!(Level::INFO, "processing messages");
 
             // Process messages on the mailbox
-            while let Some(request) = self.mailbox.recv()? {
+            while let Some(request) = self.mailbox.recv() {
                 match request.action {
                     protocol::Action::Greet { name } => {
                         event!(Level::INFO, "Hello \"{}\", from {}!", name, self.name);

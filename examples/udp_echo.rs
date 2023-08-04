@@ -90,7 +90,7 @@ impl Actor for Service {
     }
 
     fn process(&mut self, _ctx: &mut Context) -> Result<(), Error> {
-        while let Some(packet) = self.server_mailbox.recv()? {
+        while let Some(packet) = self.server_mailbox.recv() {
             let data = std::str::from_utf8(&packet.data)?;
             event!(Level::INFO, data, "server received packet");
 
@@ -103,7 +103,7 @@ impl Actor for Service {
             self.server_sender.send(message)?;
         }
 
-        while let Some(packet) = self.client_mailbox.recv()? {
+        while let Some(packet) = self.client_mailbox.recv() {
             let data = std::str::from_utf8(&packet.data)?;
             event!(Level::INFO, data, "client received packet");
         }

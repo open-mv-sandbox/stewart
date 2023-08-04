@@ -95,7 +95,7 @@ impl Actor for Service {
 
     fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
         let mut readable = false;
-        while let Some(ready) = self.ready_mailbox.recv()? {
+        while let Some(ready) = self.ready_mailbox.recv() {
             readable |= ready.readable;
         }
 
@@ -103,7 +103,7 @@ impl Actor for Service {
             self.on_listener_ready(ctx)?;
         }
 
-        while let Some(_action) = self.actions_mailbox.recv()? {
+        while let Some(_action) = self.actions_mailbox.recv() {
             ctx.set_stop();
         }
 

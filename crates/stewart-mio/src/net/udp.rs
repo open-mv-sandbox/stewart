@@ -100,7 +100,7 @@ impl Actor for Service {
     }
 
     fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        self.poll_mailbox(ctx)?;
+        self.poll_actions(ctx)?;
         self.poll_ready()?;
 
         Ok(())
@@ -108,8 +108,8 @@ impl Actor for Service {
 }
 
 impl Service {
-    fn poll_mailbox(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        while let Some(message) = self.action_mailbox.recv()? {
+    fn poll_actions(&mut self, ctx: &mut Context) -> Result<(), Error> {
+        while let Some(message) = self.action_mailbox.recv() {
             match message {
                 Action::Send(packet) => self.on_action_send(packet)?,
                 Action::Close => ctx.set_stop(),
@@ -142,7 +142,7 @@ impl Service {
         let mut readable = false;
         let mut writable = false;
 
-        while let Some(ready) = self.ready_mailbox.recv()? {
+        while let Some(ready) = self.ready_mailbox.recv() {
             readable |= ready.readable;
             writable |= ready.writable;
         }

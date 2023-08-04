@@ -21,6 +21,10 @@ name = "hello"
 path = "hello.rs"
 
 [[example]]
+name = "html_hello"
+path = "html_hello.rs"
+
+[[example]]
 name = "quic_server"
 path = "quic_server.rs"
 

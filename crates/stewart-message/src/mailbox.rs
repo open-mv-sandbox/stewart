@@ -61,19 +61,8 @@ impl<M> Mailbox<M> {
     /// This is because, all users of this mailbox being dropped probably means something has gone
     /// wrong.
     /// Making sure we fail if this happens prevents inconsistent behavior with dangling resources.
-    pub fn recv(&self) -> Result<Option<M>, RecvError> {
-        // Try to get a message
-        let next = self.inner.borrow_mut().queue.pop_front();
-
-        // If we don't have a message, make sure there's senders left
-        if next.is_none() {
-            let count = Rc::weak_count(&self.inner);
-            if count == 0 {
-                return Err(anyhow!("all senders dropped").into());
-            }
-        }
-
-        Ok(next)
+    pub fn recv(&self) -> Option<M> {
+        self.inner.borrow_mut().queue.pop_front()
     }
 }
 
@@ -109,16 +98,6 @@ impl<M> Clone for Sender<M> {
             inner: self.inner.clone(),
         }
     }
-}
-
-/// Error while sending message.
-///
-/// This happens if the mailbox senders no longer exists.
-#[derive(Error, Debug)]
-#[error("receiving messages failed")]
-pub struct RecvError {
-    #[from]
-    source: Error,
 }
 
 /// Error while sending message.

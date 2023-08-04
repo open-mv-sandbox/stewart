@@ -58,7 +58,7 @@ impl Actor for Service {
     }
 
     fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        while let Some(stream) = self.server_mailbox.recv()? {
+        while let Some(stream) = self.server_mailbox.recv() {
             event!(Level::INFO, "stream accepted");
 
             // Send a greeting message
@@ -74,7 +74,7 @@ impl Actor for Service {
         }
 
         for stream in &self.streams {
-            while let Some(event) = stream.event_mailbox.recv()? {
+            while let Some(event) = stream.event_mailbox.recv() {
                 event!(Level::INFO, bytes = event.data.len(), "received data");
 
                 // Reply with an echo

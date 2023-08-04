@@ -89,10 +89,17 @@ impl Actor for Service {
     }
 
     fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
+        self.poll_actions(ctx)?;
         self.poll_ready(ctx)?;
 
+        Ok(())
+    }
+}
+
+impl Service {
+    fn poll_actions(&mut self, ctx: &mut Context) -> Result<(), Error> {
         // Handle actions
-        while let Some(action) = self.action_mailbox.recv()? {
+        while let Some(action) = self.action_mailbox.recv() {
             match action {
                 StreamAction::Send(action) => self.on_action_send(action)?,
                 StreamAction::Close => ctx.set_stop(),
@@ -101,14 +108,12 @@ impl Actor for Service {
 
         Ok(())
     }
-}
 
-impl Service {
     fn poll_ready(&mut self, ctx: &mut Context) -> Result<(), Error> {
         // Handle ready
         let mut readable = false;
         let mut writable = false;
-        while let Some(ready) = self.ready_mailbox.recv()? {
+        while let Some(ready) = self.ready_mailbox.recv() {
             readable |= ready.readable;
             writable |= ready.writable;
         }
@@ -166,7 +171,7 @@ impl Service {
 
         // If the stream got closed, stop the actor
         if closed {
-            // TODO: Event
+            // TODO: Emit an event that the stream was closed
             event!(Level::DEBUG, "closing stream");
             ctx.set_stop();
         }
@@ -225,7 +230,7 @@ impl Service {
     }
 
     fn on_action_send(&mut self, action: SendAction) -> Result<(), Error> {
-        event!(Level::INFO, "received outgoing");
+        event!(Level::TRACE, "received outgoing");
 
         // Queue outgoing packet
         let should_register = self.queue.is_empty();
