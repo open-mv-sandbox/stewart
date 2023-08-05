@@ -75,7 +75,7 @@ impl Service {
         while let Some(event) = self.server_mailbox.recv() {
             match event {
                 tcp::ListenerEvent::Connected(event) => {
-                    event!(Level::INFO, "stream accepted");
+                    event!(Level::DEBUG, "stream accepted");
 
                     // Keep track of the stream
                     event.event_mailbox.set_signal(ctx.signal());
@@ -98,13 +98,13 @@ impl Service {
             while let Some(event) = connection.event.event_mailbox.recv() {
                 match event {
                     tcp::StreamEvent::Recv(event) => {
-                        event!(Level::DEBUG, bytes = event.data.len(), "received data");
+                        event!(Level::TRACE, bytes = event.data.len(), "received data");
 
                         let data = std::str::from_utf8(&event.data)?;
                         connection.pending.push_str(data);
                     }
                     tcp::StreamEvent::Closed => {
-                        event!(Level::INFO, "stream closed");
+                        event!(Level::DEBUG, "stream closed");
                         connection.closed = true;
                     }
                 }
@@ -114,15 +114,15 @@ impl Service {
                 // Check if we have a full request worth of data
                 let split = connection.pending.split_once("\r\n\r\n");
                 if let Some((_left, right)) = split {
-                    event!(Level::INFO, "responding to request");
+                    event!(Level::DEBUG, "responding to request");
                     connection.pending = right.to_string();
 
                     // Send the response
                     let body = self.body.as_bytes();
                     let mut data = Vec::new();
 
-                    data.write_all(b"HTTP/1.1 200 OK")?;
-                    data.write_all(b"\r\nContent-Type: text/html\r\nContent-Length: ")?;
+                    data.write_all(b"HTTP/1.1 200 OK\r\n")?;
+                    data.write_all(b"Content-Type: text/html\r\nContent-Length: ")?;
                     let length = body.len().to_string();
                     data.write_all(length.as_bytes())?;
                     data.write_all(b"\r\n\r\n")?;

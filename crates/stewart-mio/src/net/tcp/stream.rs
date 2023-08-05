@@ -109,7 +109,7 @@ impl Service {
         while let Some(action) = self.action_mailbox.recv() {
             match action {
                 StreamAction::Send(action) => self.on_action_send(action)?,
-                StreamAction::Close => self.close(ctx)?,
+                StreamAction::Close => ctx.set_stop(),
             }
         }
 
@@ -178,7 +178,7 @@ impl Service {
 
         // If the stream got closed, stop the actor
         if closed {
-            self.close(ctx)?;
+            ctx.set_stop();
         }
 
         Ok(())
@@ -252,13 +252,11 @@ impl Service {
 
         Ok(())
     }
+}
 
-    fn close(&mut self, ctx: &mut Context) -> Result<(), Error> {
+impl Drop for Service {
+    fn drop(&mut self) {
         event!(Level::DEBUG, "closing stream");
-
-        ctx.set_stop();
-        self.event_sender.send(StreamEvent::Closed)?;
-
-        Ok(())
+        let _ = self.event_sender.send(StreamEvent::Closed);
     }
 }
