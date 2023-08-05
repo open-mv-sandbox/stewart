@@ -19,4 +19,4 @@ Usually simply sending out an event to a receiving mailbox is enough, as it shou
 first.
 
 This pattern relies on the *single-threaded* nature of a stewart `World`.
-Envoy actors relaying messages to external systems should still follow this pattern internally.
+Envoy actors working with external systems should protect other actors from asynchronous behavior.

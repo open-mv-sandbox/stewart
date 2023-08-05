@@ -16,7 +16,7 @@ fn main() -> Result<(), Error> {
 
     // Start the actor
     let actor = Service::new(&mut world, &registry)?;
-    world.insert("echo-example", actor)?;
+    world.insert("html-example", actor)?;
 
     // Run the event loop
     stewart_mio::run_event_loop(&mut world, &registry)?;
