@@ -22,6 +22,7 @@ fn main() -> Result<(), Error> {
 
     // Mailboxes don't need to be associated with an actor.
     let (mailbox, sender) = mailbox();
+    mailbox.set_floating();
 
     let action = hello::Action::Greet {
         name: "World".to_string(),

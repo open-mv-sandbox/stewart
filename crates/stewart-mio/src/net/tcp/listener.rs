@@ -35,7 +35,7 @@ pub struct ConnectedEvent {
 /// TCP, unlike UDP, works with ongoing connections.
 /// Before a connection is established, you first need to 'listen' for those on a port.
 #[instrument("tcp::listen", skip_all)]
-pub fn listen(
+pub fn bind(
     world: &mut World,
     registry: Rc<Registry>,
     addr: SocketAddr,
@@ -62,6 +62,8 @@ impl Service {
         addr: SocketAddr,
         event_sender: Sender<ListenerEvent>,
     ) -> Result<(Self, Sender<ListenerAction>, ListenerInfo), Error> {
+        event!(Level::DEBUG, "binding");
+
         let (actions_mailbox, actions_sender) = mailbox();
         let (ready_mailbox, ready_sender) = mailbox();
 
@@ -88,6 +90,13 @@ impl Service {
         };
         let listener = ListenerInfo { local_addr };
         Ok((value, actions_sender, listener))
+    }
+}
+
+impl Drop for Service {
+    fn drop(&mut self) {
+        event!(Level::DEBUG, "closing");
+        let _ = self.event_sender.send(ListenerEvent::Closed);
     }
 }
 

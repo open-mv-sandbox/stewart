@@ -88,6 +88,13 @@ impl Service {
     }
 }
 
+impl Drop for Service {
+    fn drop(&mut self) {
+        event!(Level::DEBUG, "closing stream");
+        let _ = self.event_sender.send(StreamEvent::Closed);
+    }
+}
+
 impl Actor for Service {
     fn register(&mut self, ctx: &mut stewart::Context) -> Result<(), Error> {
         self.action_mailbox.set_signal(ctx.signal());
@@ -251,12 +258,5 @@ impl Service {
         }
 
         Ok(())
-    }
-}
-
-impl Drop for Service {
-    fn drop(&mut self) {
-        event!(Level::DEBUG, "closing stream");
-        let _ = self.event_sender.send(StreamEvent::Closed);
     }
 }

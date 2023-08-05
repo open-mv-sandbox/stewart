@@ -4,15 +4,16 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{anyhow, Context as _, Error};
 use thiserror::Error;
 
 use stewart::Signal;
 
+/// Create a new `Mailbox` with a paired `Sender`.
 pub fn mailbox<M>() -> (Mailbox<M>, Sender<M>) {
     let inner = MailboxInner {
         queue: VecDeque::new(),
-        notify: None,
+        notify: Notify::Pending,
     };
     let inner = Rc::new(RefCell::new(inner));
     let weak = Rc::downgrade(&inner);
@@ -44,7 +45,13 @@ impl<M> Clone for Mailbox<M> {
 
 struct MailboxInner<M> {
     queue: VecDeque<M>,
-    notify: Option<Signal>,
+    notify: Notify,
+}
+
+enum Notify {
+    Pending,
+    Signal(Signal),
+    Floating,
 }
 
 impl<M> Mailbox<M> {
@@ -52,20 +59,19 @@ impl<M> Mailbox<M> {
     ///
     /// Only one signal can be set at a time, setting this will remove the previous value.
     pub fn set_signal(&self, signal: Signal) {
-        self.inner.borrow_mut().notify = Some(signal);
+        self.inner.borrow_mut().notify = Notify::Signal(signal);
+    }
+
+    /// Set this mailbox to be managed externally from a `World`, not sending a signal.
+    pub fn set_floating(&self) {
+        self.inner.borrow_mut().notify = Notify::Floating;
     }
 
     /// Get the next message, if any is available.
-    ///
-    /// Recv will fail if all senders are dropped.
-    /// This is because, all users of this mailbox being dropped probably means something has gone
-    /// wrong.
-    /// Making sure we fail if this happens prevents inconsistent behavior with dangling resources.
     pub fn recv(&self) -> Option<M> {
         self.inner.borrow_mut().queue.pop_front()
     }
 }
-
 /// Sending utility, for sending messages to a mailbox.
 pub struct Sender<M> {
     inner: Weak<RefCell<MailboxInner<M>>>,
@@ -80,13 +86,19 @@ impl<M> Sender<M> {
         };
         let mut inner = inner.borrow_mut();
 
-        // Apply the message to the queue and notify
-        inner.queue.push_back(message);
-
-        // Notify a listening actor
-        if let Some(signal) = inner.notify.as_ref() {
-            signal.send().context("failed to notify registered actor")?;
+        // Notify a listening actor, do this first, so we know there's no inner error first
+        match &inner.notify {
+            Notify::Pending => {
+                return Err(anyhow!("mailbox has no signal and isn't marked floating").into());
+            }
+            Notify::Signal(signal) => {
+                signal.send().context("failed to notify registered actor")?;
+            }
+            Notify::Floating => {}
         }
+
+        // Apply the message to the queue
+        inner.queue.push_back(message);
 
         Ok(())
     }
@@ -100,9 +112,7 @@ impl<M> Clone for Sender<M> {
     }
 }
 
-/// Error while sending message.
-///
-/// This happens if the receiving mailbox no longer exists.
+/// Error while sending a message.
 #[derive(Error, Debug)]
 #[error("sending message failed")]
 pub struct SendError {

@@ -45,7 +45,7 @@ impl Service {
 
         // Start the listen port
         let (server_sender, server_info) =
-            tcp::listen(world, registry.clone(), "127.0.0.1:1234".parse()?, on_event)?;
+            tcp::bind(world, registry.clone(), "127.0.0.1:1234".parse()?, on_event)?;
         event!(Level::INFO, addr = ?server_info.local_addr, "listening");
 
         let actor = Service {

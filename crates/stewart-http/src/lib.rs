@@ -42,7 +42,7 @@ impl Service {
         let (server_mailbox, on_event) = mailbox();
 
         // Start the listen port
-        let (server_sender, server_info) = tcp::listen(world, registry, addr, on_event)?;
+        let (server_sender, server_info) = tcp::bind(world, registry, addr, on_event)?;
         event!(Level::INFO, addr = ?server_info.local_addr, "listening");
 
         let actor = Service {
@@ -75,7 +75,7 @@ impl Service {
         while let Some(event) = self.server_mailbox.recv() {
             match event {
                 tcp::ListenerEvent::Connected(event) => {
-                    event!(Level::DEBUG, "stream accepted");
+                    event!(Level::DEBUG, "connection accepted");
 
                     // Keep track of the stream
                     event.event_mailbox.set_signal(ctx.signal());
@@ -104,7 +104,7 @@ impl Service {
                         connection.pending.push_str(data);
                     }
                     tcp::StreamEvent::Closed => {
-                        event!(Level::DEBUG, "stream closed");
+                        event!(Level::DEBUG, "connection closed");
                         connection.closed = true;
                     }
                 }
