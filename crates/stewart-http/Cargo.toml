@@ -1,0 +1,10 @@
+[package]
+name = "stewart-http"
+version = "0.1.0-dev"
+edition = "2021"
+description = "HTTP implementation for stewart"
+readme = "../../README.md"
+repository = "https://github.com/open-mv-sandbox/stewart"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
