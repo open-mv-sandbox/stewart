@@ -8,3 +8,8 @@ repository = "https://github.com/open-mv-sandbox/stewart"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+anyhow.workspace = true
+tracing.workspace = true
+stewart.workspace = true
+stewart-message.workspace = true
+stewart-mio.workspace = true
