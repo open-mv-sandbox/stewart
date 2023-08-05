@@ -6,6 +6,7 @@ edition = "2021"
 
 [dev-dependencies]
 anyhow.workspace = true
+bytes.workspace = true
 rcgen.workspace = true
 rustls.workspace = true
 tracing.workspace = true

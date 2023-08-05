@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow.workspace = true
+bytes.workspace = true
 tracing.workspace = true
 stewart.workspace = true
 stewart-message.workspace = true

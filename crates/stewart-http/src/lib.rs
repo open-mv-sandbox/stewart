@@ -1,6 +1,7 @@
-use std::{io::Write, net::SocketAddr};
+use std::net::SocketAddr;
 
 use anyhow::Error;
+use bytes::{BufMut, BytesMut};
 use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
 use stewart_mio::{net::tcp, RegistryHandle};
@@ -119,16 +120,18 @@ impl Service {
 
                     // Send the response
                     let body = self.body.as_bytes();
-                    let mut data = Vec::new();
+                    let mut data = BytesMut::new();
 
-                    data.write_all(b"HTTP/1.1 200 OK\r\n")?;
-                    data.write_all(b"Content-Type: text/html\r\nContent-Length: ")?;
+                    data.put(&b"HTTP/1.1 200 OK\r\n"[..]);
+                    data.put(&b"Content-Type: text/html\r\nContent-Length: "[..]);
                     let length = body.len().to_string();
-                    data.write_all(length.as_bytes())?;
-                    data.write_all(b"\r\n\r\n")?;
-                    data.write_all(body)?;
+                    data.put(length.as_bytes());
+                    data.put(&b"\r\n\r\n"[..]);
+                    data.put(body);
 
-                    let action = tcp::SendAction { data };
+                    let action = tcp::SendAction {
+                        data: data.freeze(),
+                    };
                     connection
                         .event
                         .actions_sender

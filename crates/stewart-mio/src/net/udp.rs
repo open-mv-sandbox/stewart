@@ -1,6 +1,7 @@
 use std::{collections::VecDeque, net::SocketAddr, time::Instant};
 
 use anyhow::Error;
+use bytes::{Bytes, BytesMut};
 use mio::{Interest, Token};
 use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
@@ -20,13 +21,13 @@ pub enum Action {
 
 pub struct SendAction {
     pub remote: SocketAddr,
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }
 
 pub struct RecvEvent {
     pub remote: SocketAddr,
     pub arrived: Instant,
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }
 
 pub struct SocketInfo {
@@ -55,7 +56,7 @@ struct Service {
     socket: mio::net::UdpSocket,
     token: Token,
 
-    buffer: Vec<u8>,
+    buffer: BytesMut,
     queue: VecDeque<SendAction>,
 }
 
@@ -84,8 +85,7 @@ impl Service {
             socket,
             token,
 
-            // Max size of a UDP packet
-            buffer: vec![0; 65536],
+            buffer: BytesMut::new(),
             queue: VecDeque::new(),
         };
         let socket = SocketInfo { local_addr };
@@ -169,6 +169,9 @@ impl Service {
     }
 
     fn try_recv(&mut self) -> Result<bool, Error> {
+        // Max size of a UDP packet
+        self.buffer.resize(65536, 0);
+
         // Attempt to receive packet
         let result = self.socket.recv_from(&mut self.buffer);
         let Some((size, remote)) = check_io(result)? else {
@@ -180,8 +183,10 @@ impl Service {
         // Track time of arrival
         let arrived = Instant::now();
 
+        // Split off the read data
+        let data = self.buffer.split_to(size).freeze();
+
         // Send the packet to the listener
-        let data = self.buffer[..size].to_vec();
         let packet = RecvEvent {
             remote,
             arrived,

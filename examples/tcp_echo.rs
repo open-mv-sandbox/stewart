@@ -1,6 +1,7 @@
 mod utils;
 
 use anyhow::Error;
+use bytes::Bytes;
 use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
 use stewart_mio::{
@@ -77,7 +78,7 @@ impl Service {
                     event!(Level::INFO, "stream accepted");
 
                     // Send a greeting message
-                    let data = b"HELLO WORLD\n".to_vec();
+                    let data: Bytes = "HELLO WORLD\n".into();
                     let action = tcp::SendAction { data };
                     event.actions_sender.send(tcp::StreamAction::Send(action))?;
 
@@ -104,8 +105,8 @@ impl Service {
                     tcp::StreamEvent::Recv(event) => {
                         event!(Level::INFO, bytes = event.data.len(), "received data");
 
-                        let data = String::from_utf8(event.data)?;
-                        connection.pending.push(data);
+                        let data = std::str::from_utf8(&event.data)?;
+                        connection.pending.push(data.to_string());
                     }
                     tcp::StreamEvent::Closed => {
                         event!(Level::INFO, "stream closed");
@@ -118,9 +119,7 @@ impl Service {
                 for pending in connection.pending.drain(..) {
                     // Reply with an echo to all pending
                     let reply = format!("HELLO, \"{}\"!\n", pending.trim());
-                    let packet = tcp::SendAction {
-                        data: reply.into_bytes(),
-                    };
+                    let packet = tcp::SendAction { data: reply.into() };
                     let message = tcp::StreamAction::Send(packet);
                     connection.event.actions_sender.send(message)?;
                 }

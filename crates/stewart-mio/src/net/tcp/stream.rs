@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::Error;
+use bytes::{Buf, Bytes, BytesMut};
 use mio::{Interest, Token};
 use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
@@ -19,7 +20,7 @@ pub enum StreamAction {
 }
 
 pub struct SendAction {
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }
 
 pub enum StreamEvent {
@@ -30,7 +31,7 @@ pub enum StreamEvent {
 }
 
 pub struct RecvEvent {
-    pub data: Vec<u8>,
+    pub data: Bytes,
 }
 
 pub(crate) fn open(
@@ -54,7 +55,8 @@ struct Service {
     stream: mio::net::TcpStream,
     token: Token,
 
-    queue: VecDeque<Vec<u8>>,
+    queue: VecDeque<Bytes>,
+    buffer: BytesMut,
 }
 
 impl Service {
@@ -81,6 +83,7 @@ impl Service {
             token,
 
             queue: VecDeque::new(),
+            buffer: BytesMut::new(),
         };
         Ok((value, sender))
     }
@@ -145,14 +148,17 @@ impl Service {
     }
 
     fn on_ready_readable(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        // TODO: Re-use buffer where possible
+        // Make sure we have at least a minimum amount of buffer space left
+        if self.buffer.len() < 1024 {
+            self.buffer.resize(2048, 0);
+        }
+
         let mut closed = false;
-        let mut buffer = vec![0; 1024];
         let mut bytes_read = 0;
 
         loop {
             // Attempt to receive data
-            let result = self.stream.read(&mut buffer[bytes_read..]);
+            let result = self.stream.read(&mut self.buffer[bytes_read..]);
 
             match result {
                 Ok(len) => {
@@ -164,8 +170,8 @@ impl Service {
 
                     // Add additional read data to buffer
                     bytes_read += len;
-                    if bytes_read == buffer.len() {
-                        buffer.resize(buffer.len() + 1024, 0);
+                    if bytes_read == self.buffer.len() {
+                        self.buffer.resize(self.buffer.len() + 1024, 0);
                     }
                 }
                 Err(error) => match error.kind() {
@@ -179,7 +185,7 @@ impl Service {
         // Send read data to listener
         if bytes_read != 0 {
             event!(Level::TRACE, count = bytes_read, "received incoming");
-            let data = buffer[..bytes_read].to_vec();
+            let data = self.buffer.split_to(bytes_read).freeze();
             let event = RecvEvent { data };
             self.event_sender.send(StreamEvent::Recv(event))?;
         }
@@ -217,7 +223,7 @@ impl Service {
             Ok(count) => {
                 // We wrote data correctly, check if we wrote all of it, if not we need to truncate
                 if count < data.len() {
-                    *data = data[count..].to_vec();
+                    data.advance(count);
                 } else {
                     // We wrote all, no need to retain
                     self.queue.pop_front();

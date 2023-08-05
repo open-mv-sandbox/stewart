@@ -23,14 +23,14 @@ fn main() -> Result<(), Error> {
     // Send a message to be echo'd
     let packet = udp::SendAction {
         remote: server_addr,
-        data: b"Client Packet".to_vec(),
+        data: "Client Packet".into(),
     };
     let message = udp::Action::Send(packet);
     client_send.send(message)?;
 
     let packet = udp::SendAction {
         remote: server_addr,
-        data: b"Somewhat Longer Packet".to_vec(),
+        data: "Somewhat Longer Packet".into(),
     };
     let message = udp::Action::Send(packet);
     client_send.send(message)?;
@@ -97,7 +97,7 @@ impl Actor for Service {
             // Echo back with a hello message
             let packet = udp::SendAction {
                 remote: packet.remote,
-                data: format!("Hello, \"{}\"!", data).into_bytes(),
+                data: format!("Hello, \"{}\"!", data).into(),
             };
             let message = udp::Action::Send(packet);
             self.server_sender.send(message)?;
