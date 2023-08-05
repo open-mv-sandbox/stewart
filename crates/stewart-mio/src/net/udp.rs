@@ -35,9 +35,9 @@ pub fn bind(
     world: &mut World,
     registry: Rc<Registry>,
     addr: SocketAddr,
-    on_event: Sender<RecvEvent>,
+    event_sender: Sender<RecvEvent>,
 ) -> Result<(Sender<Action>, SocketInfo), Error> {
-    let (actor, sender, socket) = Service::new(registry, addr, on_event)?;
+    let (actor, sender, socket) = Service::new(registry, addr, event_sender)?;
     world.insert("udp-socket", actor)?;
 
     Ok((sender, socket))
@@ -46,7 +46,7 @@ pub fn bind(
 struct Service {
     action_mailbox: Mailbox<Action>,
     ready_mailbox: Mailbox<Ready>,
-    on_event: Sender<RecvEvent>,
+    event_sender: Sender<RecvEvent>,
 
     registry: Rc<Registry>,
     socket: mio::net::UdpSocket,
@@ -60,7 +60,7 @@ impl Service {
     fn new(
         registry: Rc<Registry>,
         addr: SocketAddr,
-        on_event: Sender<RecvEvent>,
+        event_sender: Sender<RecvEvent>,
     ) -> Result<(Self, Sender<Action>, SocketInfo), Error> {
         let (action_mailbox, action_sender) = mailbox();
         let (ready, ready_sender) = mailbox();
@@ -76,7 +76,7 @@ impl Service {
         let value = Self {
             action_mailbox: action_mailbox.clone(),
             ready_mailbox: ready.clone(),
-            on_event,
+            event_sender,
 
             registry,
             socket,
@@ -185,7 +185,7 @@ impl Service {
             arrived,
             data,
         };
-        self.on_event.send(packet)?;
+        self.event_sender.send(packet)?;
 
         Ok(true)
     }

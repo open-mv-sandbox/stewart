@@ -28,9 +28,15 @@ fn main() -> Result<(), Error> {
 }
 
 struct Service {
-    server_mailbox: Mailbox<tcp::ConnectedEvent>,
+    server_mailbox: Mailbox<tcp::ListenerEvent>,
     _server_sender: Sender<tcp::ListenerAction>,
-    streams: Vec<tcp::ConnectedEvent>,
+    connections: Vec<Connection>,
+}
+
+struct Connection {
+    event: tcp::ConnectedEvent,
+    pending: Vec<String>,
+    closed: bool,
 }
 
 impl Service {
@@ -45,7 +51,7 @@ impl Service {
         let actor = Service {
             server_mailbox,
             _server_sender: server_sender,
-            streams: Vec::new(),
+            connections: Vec::new(),
         };
         Ok(actor)
     }
@@ -58,35 +64,72 @@ impl Actor for Service {
     }
 
     fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        while let Some(stream) = self.server_mailbox.recv() {
-            event!(Level::INFO, "stream accepted");
+        self.poll_listener(ctx)?;
+        self.poll_connections()?;
 
-            // Send a greeting message
-            let data = b"HELLO WORLD\n".to_vec();
-            let action = tcp::SendAction { data };
-            stream
-                .actions_sender
-                .send(tcp::StreamAction::Send(action))?;
+        Ok(())
+    }
+}
 
-            // Keep track of the stream
-            stream.event_mailbox.set_signal(ctx.signal());
-            self.streams.push(stream);
-        }
+impl Service {
+    fn poll_listener(&mut self, ctx: &mut Context) -> Result<(), Error> {
+        while let Some(event) = self.server_mailbox.recv() {
+            match event {
+                tcp::ListenerEvent::Connected(event) => {
+                    event!(Level::INFO, "stream accepted");
 
-        for stream in &self.streams {
-            while let Some(event) = stream.event_mailbox.recv() {
-                event!(Level::INFO, bytes = event.data.len(), "received data");
+                    // Send a greeting message
+                    let data = b"HELLO WORLD\n".to_vec();
+                    let action = tcp::SendAction { data };
+                    event.actions_sender.send(tcp::StreamAction::Send(action))?;
 
-                // Reply with an echo
-                let data = std::str::from_utf8(&event.data)?;
-                let data = data.trim();
-                let packet = tcp::SendAction {
-                    data: format!("HELLO, \"{}\"!\n", data).into_bytes(),
-                };
-                let message = tcp::StreamAction::Send(packet);
-                stream.actions_sender.send(message)?;
+                    // Keep track of the stream
+                    event.event_mailbox.set_signal(ctx.signal());
+                    let connection = Connection {
+                        event,
+                        pending: Vec::new(),
+                        closed: false,
+                    };
+                    self.connections.push(connection);
+                }
+                tcp::ListenerEvent::Closed => ctx.set_stop(),
             }
         }
+
+        Ok(())
+    }
+
+    fn poll_connections(&mut self) -> Result<(), Error> {
+        for connection in &mut self.connections {
+            while let Some(event) = connection.event.event_mailbox.recv() {
+                match event {
+                    tcp::StreamEvent::Recv(event) => {
+                        event!(Level::INFO, bytes = event.data.len(), "received data");
+
+                        let data = String::from_utf8(event.data)?;
+                        connection.pending.push(data);
+                    }
+                    tcp::StreamEvent::Closed => {
+                        event!(Level::INFO, "stream closed");
+                        connection.closed = true;
+                    }
+                }
+            }
+
+            if !connection.closed {
+                for pending in connection.pending.drain(..) {
+                    // Reply with an echo to all pending
+                    let reply = format!("HELLO, \"{}\"!\n", pending.trim());
+                    let packet = tcp::SendAction {
+                        data: reply.into_bytes(),
+                    };
+                    let message = tcp::StreamAction::Send(packet);
+                    connection.event.actions_sender.send(message)?;
+                }
+            }
+        }
+
+        self.connections.retain(|c| !c.closed);
 
         Ok(())
     }

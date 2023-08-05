@@ -25,15 +25,16 @@ fn main() -> Result<(), Error> {
 }
 
 struct Service {
-    server_mailbox: Mailbox<tcp::ConnectedEvent>,
+    server_mailbox: Mailbox<tcp::ListenerEvent>,
     _server_sender: Sender<tcp::ListenerAction>,
 
     connections: Vec<Connection>,
 }
 
 struct Connection {
-    stream: tcp::ConnectedEvent,
+    event: tcp::ConnectedEvent,
     pending: String,
+    closed: bool,
 }
 
 impl Service {
@@ -62,36 +63,54 @@ impl Actor for Service {
     }
 
     fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        while let Some(stream) = self.server_mailbox.recv() {
-            event!(Level::DEBUG, "stream accepted");
+        self.poll_listener(ctx)?;
+        self.poll_connections()?;
 
-            // Keep track of the stream
-            stream.event_mailbox.set_signal(ctx.signal());
-            let connection = Connection {
-                stream,
-                pending: String::new(),
-            };
-            self.connections.push(connection);
+        Ok(())
+    }
+}
+
+impl Service {
+    fn poll_listener(&mut self, ctx: &mut Context) -> Result<(), Error> {
+        while let Some(event) = self.server_mailbox.recv() {
+            match event {
+                tcp::ListenerEvent::Connected(event) => {
+                    event!(Level::INFO, "stream accepted");
+
+                    // Keep track of the stream
+                    event.event_mailbox.set_signal(ctx.signal());
+                    let connection = Connection {
+                        event,
+                        pending: String::new(),
+                        closed: false,
+                    };
+                    self.connections.push(connection);
+                }
+                tcp::ListenerEvent::Closed => ctx.set_stop(),
+            }
         }
 
+        Ok(())
+    }
+
+    fn poll_connections(&mut self) -> Result<(), Error> {
         for connection in &mut self.connections {
-            while let Some(event) = connection.stream.event_mailbox.recv() {
-                // TODO: Stream close event
+            while let Some(event) = connection.event.event_mailbox.recv() {
+                match event {
+                    tcp::StreamEvent::Recv(event) => {
+                        event!(Level::DEBUG, bytes = event.data.len(), "received data");
 
-                event!(Level::DEBUG, bytes = event.data.len(), "received data");
+                        let data = std::str::from_utf8(&event.data)?;
+                        connection.pending.push_str(data);
+                    }
+                    tcp::StreamEvent::Closed => {
+                        event!(Level::INFO, "stream closed");
+                        connection.closed = true;
+                    }
+                }
+            }
 
-                // Try get the request data
-                let result = std::str::from_utf8(&event.data);
-                let Ok(data) = result else {
-                    // Reject malformed connection silently
-                    let action = tcp::StreamAction::Close;
-                    connection.stream.actions_sender.send(action)?;
-                    continue;
-                };
-
-                // Append the data to anything pending
-                connection.pending.push_str(data);
-
+            if !connection.closed {
                 // Check if we have a full request worth of data
                 let split = connection.pending.split_once("\r\n\r\n");
                 if let Some((_left, right)) = split {
@@ -99,16 +118,21 @@ impl Actor for Service {
                     connection.pending = right.to_string();
 
                     // Send the response
-                    let data = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 63\r\n\r\n<!DOCTYPE html><html><body><h1>Hello, World!</h1></body></html>".to_vec();
-                    let action = tcp::SendAction { data };
+                    let action = tcp::SendAction {
+                        data: RESPONSE.to_vec(),
+                    };
                     connection
-                        .stream
+                        .event
                         .actions_sender
                         .send(tcp::StreamAction::Send(action))?;
                 }
             }
         }
 
+        self.connections.retain(|c| !c.closed);
+
         Ok(())
     }
 }
+
+const RESPONSE: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 63\r\n\r\n<!DOCTYPE html><html><body><h1>Hello, World!</h1></body></html>";

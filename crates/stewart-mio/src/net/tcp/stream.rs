@@ -13,14 +13,21 @@ use tracing::{event, Level};
 use crate::{Ready, Registry};
 
 pub enum StreamAction {
-    /// Send a data to a stream.
+    /// Send a data to the stream.
     Send(SendAction),
-    /// Close and stop the stream.
+    /// Close the stream.
     Close,
 }
 
 pub struct SendAction {
     pub data: Vec<u8>,
+}
+
+pub enum StreamEvent {
+    /// Data received on the stream.
+    Recv(RecvEvent),
+    /// Stream has been closed.
+    Closed,
 }
 
 pub struct RecvEvent {
@@ -31,9 +38,9 @@ pub(crate) fn open(
     world: &mut World,
     registry: Rc<Registry>,
     stream: mio::net::TcpStream,
-    on_event: Sender<RecvEvent>,
+    event_sender: Sender<StreamEvent>,
 ) -> Result<Sender<StreamAction>, Error> {
-    let (actor, sender) = Service::new(registry, stream, on_event)?;
+    let (actor, sender) = Service::new(registry, stream, event_sender)?;
     world.insert("tcp-stream", actor)?;
 
     Ok(sender)
@@ -42,7 +49,7 @@ pub(crate) fn open(
 struct Service {
     action_mailbox: Mailbox<StreamAction>,
     ready_mailbox: Mailbox<Ready>,
-    on_event: Sender<RecvEvent>,
+    event_sender: Sender<StreamEvent>,
 
     registry: Rc<Registry>,
     stream: mio::net::TcpStream,
@@ -55,7 +62,7 @@ impl Service {
     fn new(
         registry: Rc<Registry>,
         mut stream: mio::net::TcpStream,
-        on_event: Sender<RecvEvent>,
+        event_sender: Sender<StreamEvent>,
     ) -> Result<(Self, Sender<StreamAction>), Error> {
         event!(Level::DEBUG, "opening stream");
 
@@ -69,7 +76,7 @@ impl Service {
         let value = Service {
             action_mailbox,
             ready_mailbox,
-            on_event,
+            event_sender,
 
             registry,
             stream,
@@ -102,7 +109,7 @@ impl Service {
         while let Some(action) = self.action_mailbox.recv() {
             match action {
                 StreamAction::Send(action) => self.on_action_send(action)?,
-                StreamAction::Close => ctx.set_stop(),
+                StreamAction::Close => self.close(ctx)?,
             }
         }
 
@@ -166,14 +173,12 @@ impl Service {
             event!(Level::TRACE, count = bytes_read, "received incoming");
             let data = buffer[..bytes_read].to_vec();
             let event = RecvEvent { data };
-            self.on_event.send(event)?;
+            self.event_sender.send(StreamEvent::Recv(event))?;
         }
 
         // If the stream got closed, stop the actor
         if closed {
-            // TODO: Emit an event that the stream was closed
-            event!(Level::DEBUG, "closing stream");
-            ctx.set_stop();
+            self.close(ctx)?;
         }
 
         Ok(())
@@ -244,6 +249,15 @@ impl Service {
                 Interest::READABLE | Interest::WRITABLE,
             )?;
         }
+
+        Ok(())
+    }
+
+    fn close(&mut self, ctx: &mut Context) -> Result<(), Error> {
+        event!(Level::DEBUG, "closing stream");
+
+        ctx.set_stop();
+        self.event_sender.send(StreamEvent::Closed)?;
 
         Ok(())
     }

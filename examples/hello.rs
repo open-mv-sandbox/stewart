@@ -29,7 +29,7 @@ fn main() -> Result<(), Error> {
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
-        on_result: sender.clone(),
+        result_sender: sender.clone(),
     };
     service.send(message)?;
 
@@ -39,7 +39,7 @@ fn main() -> Result<(), Error> {
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
-        on_result: sender.clone(),
+        result_sender: sender.clone(),
     };
     service.send(message)?;
 
@@ -47,7 +47,7 @@ fn main() -> Result<(), Error> {
     let message = hello::Request {
         id: Uuid::new_v4(),
         action: hello::Action::Stop,
-        on_result: sender.clone(),
+        result_sender: sender.clone(),
     };
     service.send(message)?;
 
@@ -91,7 +91,7 @@ mod hello_service {
             /// As part of your protocol, you can include handlers to respond.
             /// Of course when bridging between worlds and across the network, these can't be
             /// directly serialized, but they can be translated by 'envoy' actors.
-            pub on_result: Sender<Uuid>,
+            pub result_sender: Sender<Uuid>,
         }
 
         pub enum Action {
@@ -164,7 +164,7 @@ mod hello_service {
                 }
 
                 // Reply back to the sender
-                request.on_result.send(request.id)?;
+                request.result_sender.send(request.id)?;
             }
 
             Ok(())

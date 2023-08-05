@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub enum ListenerAction {
-    /// Close and stop the listener.
+    /// Close the listener.
     Close,
 }
 
@@ -20,8 +20,13 @@ pub struct ListenerInfo {
     pub local_addr: SocketAddr,
 }
 
+pub enum ListenerEvent {
+    Connected(ConnectedEvent),
+    Closed,
+}
+
 pub struct ConnectedEvent {
-    pub event_mailbox: Mailbox<net::tcp::RecvEvent>,
+    pub event_mailbox: Mailbox<net::tcp::StreamEvent>,
     pub actions_sender: Sender<net::tcp::StreamAction>,
 }
 
@@ -34,9 +39,9 @@ pub fn listen(
     world: &mut World,
     registry: Rc<Registry>,
     addr: SocketAddr,
-    on_event: Sender<ConnectedEvent>,
+    event_sender: Sender<ListenerEvent>,
 ) -> Result<(Sender<ListenerAction>, ListenerInfo), Error> {
-    let (actor, actions_sender, info) = Service::new(registry, addr, on_event)?;
+    let (actor, actions_sender, info) = Service::new(registry, addr, event_sender)?;
     world.insert("tcp-listener", actor)?;
 
     Ok((actions_sender, info))
@@ -46,7 +51,7 @@ struct Service {
     registry: Rc<Registry>,
     actions_mailbox: Mailbox<ListenerAction>,
     ready_mailbox: Mailbox<Ready>,
-    on_event: Sender<ConnectedEvent>,
+    event_sender: Sender<ListenerEvent>,
 
     listener: mio::net::TcpListener,
 }
@@ -55,7 +60,7 @@ impl Service {
     fn new(
         registry: Rc<Registry>,
         addr: SocketAddr,
-        on_event: Sender<ConnectedEvent>,
+        event_sender: Sender<ListenerEvent>,
     ) -> Result<(Self, Sender<ListenerAction>, ListenerInfo), Error> {
         let (actions_mailbox, actions_sender) = mailbox();
         let (ready_mailbox, ready_sender) = mailbox();
@@ -77,7 +82,7 @@ impl Service {
             registry,
             actions_mailbox,
             ready_mailbox,
-            on_event,
+            event_sender,
 
             listener,
         };
@@ -123,11 +128,13 @@ impl Service {
                 net::tcp::stream::open(world, self.registry.clone(), stream, sender)?;
 
             // Notify
+            // TODO: Temporarily store the stream, until we get a reply truly accepting the stream.
+            //  This allows the caller to screen IPs and related data.
             let event = ConnectedEvent {
                 actions_sender,
                 event_mailbox,
             };
-            self.on_event.send(event)?;
+            self.event_sender.send(ListenerEvent::Connected(event))?;
         }
 
         Ok(())
