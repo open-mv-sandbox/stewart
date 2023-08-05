@@ -1,19 +1,17 @@
 mod utils;
 
-use std::rc::Rc;
-
 use anyhow::Error;
 use stewart::{Actor, Context, World};
-use stewart_mio::Registry;
+use stewart_mio::{Registry, RegistryHandle};
 
 fn main() -> Result<(), Error> {
     utils::init_logging();
 
     let mut world = World::default();
-    let registry = Rc::new(Registry::new()?);
+    let registry = Registry::new()?;
 
     // Start the actor
-    let actor = Service::new(&mut world, registry.clone())?;
+    let actor = Service::new(&mut world, registry.handle())?;
     world.insert("html-example", actor)?;
 
     // Run the event loop
@@ -25,7 +23,7 @@ fn main() -> Result<(), Error> {
 struct Service {}
 
 impl Service {
-    pub fn new(world: &mut World, registry: Rc<Registry>) -> Result<Self, Error> {
+    pub fn new(world: &mut World, registry: RegistryHandle) -> Result<Self, Error> {
         stewart_http::listen(
             world,
             registry,

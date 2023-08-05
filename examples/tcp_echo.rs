@@ -1,13 +1,11 @@
 mod utils;
 
-use std::rc::Rc;
-
 use anyhow::Error;
 use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
 use stewart_mio::{
     net::tcp::{self},
-    Registry,
+    Registry, RegistryHandle,
 };
 use tracing::{event, Level};
 
@@ -15,10 +13,10 @@ fn main() -> Result<(), Error> {
     utils::init_logging();
 
     let mut world = World::default();
-    let registry = Rc::new(Registry::new()?);
+    let registry = Registry::new()?;
 
     // Start the actor
-    let actor = Service::new(&mut world, &registry)?;
+    let actor = Service::new(&mut world, registry.handle())?;
     world.insert("echo-example", actor)?;
 
     // Run the event loop
@@ -40,12 +38,12 @@ struct Connection {
 }
 
 impl Service {
-    pub fn new(world: &mut World, registry: &Rc<Registry>) -> Result<Self, Error> {
+    pub fn new(world: &mut World, registry: RegistryHandle) -> Result<Self, Error> {
         let (server_mailbox, on_event) = mailbox();
 
         // Start the listen port
         let (server_sender, server_info) =
-            tcp::bind(world, registry.clone(), "127.0.0.1:1234".parse()?, on_event)?;
+            tcp::bind(world, registry, "127.0.0.1:1234".parse()?, on_event)?;
         event!(Level::INFO, addr = ?server_info.local_addr, "listening");
 
         let actor = Service {

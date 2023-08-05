@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, rc::Rc, sync::Arc};
+use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Error;
 use bytes::BytesMut;
@@ -6,12 +6,12 @@ use quinn_proto::{DatagramEvent, Endpoint, EndpointConfig, ServerConfig};
 use rustls::{Certificate, PrivateKey};
 use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
-use stewart_mio::{net::udp, Registry};
+use stewart_mio::{net::udp, RegistryHandle};
 use tracing::{event, Level};
 
 pub fn endpoint(
     world: &mut World,
-    registry: Rc<Registry>,
+    registry: RegistryHandle,
     addr: SocketAddr,
     certificate: Certificate,
     private_key: PrivateKey,
@@ -32,7 +32,7 @@ struct Service {
 impl Service {
     fn new(
         world: &mut World,
-        registry: Rc<Registry>,
+        registry: RegistryHandle,
         addr: SocketAddr,
         certificate: Certificate,
         private_key: PrivateKey,

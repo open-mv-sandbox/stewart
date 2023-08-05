@@ -1,50 +1,57 @@
 use std::{
     cell::RefCell,
     collections::HashMap,
-    sync::atomic::{AtomicUsize, Ordering},
+    rc::{Rc, Weak},
     time::Duration,
 };
 
 use anyhow::{Context as _, Error};
 use mio::{event::Source, Events, Interest, Poll, Token};
 use stewart_message::Sender;
+use tracing::{event, Level};
 
-// TODO: We probably sohuld have a public registry wrapper that includes Rc, just like the message
-// crate does.
-
-/// Shared mio context registry.
-///
-/// Actors can use an instance of this registry to register ready events.
-/// The registry is created by the event loop.
+/// Mio context registry.
 pub struct Registry {
-    poll: RefCell<Poll>,
-    next_token: AtomicUsize,
-    /// TODO: Since ready events always get 'squashed', we can manually track that in an
-    /// Rc<RefCel<_>>, instead of sending around messages.
-    ready_senders: RefCell<HashMap<Token, Sender<Ready>>>,
+    inner: Rc<RefCell<RegistryInner>>,
 }
 
 impl Registry {
     pub fn new() -> Result<Self, Error> {
         let poll = Poll::new()?;
 
+        let inner = RegistryInner {
+            poll,
+            next_token: 0,
+            ready_senders: HashMap::new(),
+        };
+
         let value = Self {
-            poll: RefCell::new(poll),
-            next_token: AtomicUsize::new(0),
-            ready_senders: Default::default(),
+            inner: Rc::new(RefCell::new(inner)),
         };
         Ok(value)
     }
 
+    pub fn handle(&self) -> RegistryHandle {
+        RegistryHandle {
+            inner: Rc::downgrade(&self.inner),
+        }
+    }
+}
+
+impl Registry {
     pub(crate) fn poll(&self, events: &mut Events) -> Result<(), Error> {
-        let mut poll = self.poll.borrow_mut();
-        poll.poll(events, Some(Duration::from_millis(1)))?;
+        let mut inner = self.inner.borrow_mut();
+
+        inner.poll.poll(events, Some(Duration::from_millis(1)))?;
+
         Ok(())
     }
 
-    pub(crate) fn send(&self, token: Token, ready: Ready) -> Result<(), Error> {
-        let ready_senders = self.ready_senders.borrow();
-        let sender = ready_senders
+    pub(crate) fn send(&self, token: Token, ready: ReadyEvent) -> Result<(), Error> {
+        let inner = self.inner.borrow();
+
+        let sender = inner
+            .ready_senders
             .get(&token)
             .context("failed to get ready sender")?;
 
@@ -52,33 +59,40 @@ impl Registry {
 
         Ok(())
     }
+}
 
-    /// Create a new unique token for this registry.
-    pub fn token(&self) -> Token {
-        let index = self.next_token.fetch_add(1, Ordering::SeqCst);
-        Token(index)
-    }
+/// Shared handle to access a registry.
+///
+/// Actors can use an instance of this to register for receiving mio events.
+#[derive(Clone)]
+pub struct RegistryHandle {
+    inner: Weak<RefCell<RegistryInner>>,
+}
 
+impl RegistryHandle {
+    /// Add a source to the registry, registering it with mio.
+    ///
+    /// You **must** manually deregister too, see mio docs for more information.
     pub fn register<S>(
         &self,
         source: &mut S,
-        token: Token,
         interest: Interest,
-        sender: Sender<Ready>,
-    ) -> Result<(), Error>
+        sender: Sender<ReadyEvent>,
+    ) -> Result<Token, Error>
     where
         S: Source,
     {
+        let inner = self.try_inner()?;
+        let mut inner = inner.borrow_mut();
+
         // Store the ready callback
-        self.ready_senders.borrow_mut().insert(token, sender);
+        let token = inner.token();
+        inner.ready_senders.insert(token, sender);
 
         // Register with the generated token
-        self.poll
-            .borrow()
-            .registry()
-            .register(source, token, interest)?;
+        inner.poll.registry().register(source, token, interest)?;
 
-        Ok(())
+        Ok(token)
     }
 
     pub fn reregister<S>(
@@ -90,24 +104,59 @@ impl Registry {
     where
         S: Source,
     {
-        self.poll
-            .borrow()
-            .registry()
-            .reregister(source, token, interest)?;
+        let inner = self.try_inner()?;
+        let inner = inner.borrow();
+
+        inner.poll.registry().reregister(source, token, interest)?;
+
         Ok(())
     }
 
-    pub fn deregister<S>(&self, source: &mut S) -> Result<(), Error>
+    pub fn deregister<S>(&self, source: &mut S, token: Token)
     where
         S: Source,
     {
-        self.poll.borrow().registry().deregister(source)?;
-        Ok(())
+        let Ok(inner) = self.try_inner() else {
+            event!(Level::ERROR, "failed to deregister, registry dropped");
+            return;
+        };
+        let mut inner = inner.borrow_mut();
+
+        // Remove from mio registry
+        let result = inner.poll.registry().deregister(source);
+
+        // Remove the ready callback
+        inner.ready_senders.remove(&token);
+
+        if let Err(error) = result {
+            event!(Level::ERROR, ?error, "failed to deregister");
+        }
+    }
+
+    fn try_inner(&self) -> Result<Rc<RefCell<RegistryInner>>, Error> {
+        self.inner.upgrade().context("registry dropped")
+    }
+}
+
+pub struct RegistryInner {
+    poll: Poll,
+    next_token: usize,
+    /// TODO: Since ready events always get 'squashed', we can manually track that in an
+    /// Rc<RefCel<_>>, instead of sending around messages.
+    ready_senders: HashMap<Token, Sender<ReadyEvent>>,
+}
+
+impl RegistryInner {
+    /// Create a new registry-unique token.
+    fn token(&mut self) -> Token {
+        let token = self.next_token;
+        self.next_token += 1;
+        Token(token)
     }
 }
 
 #[derive(Debug)]
-pub struct Ready {
+pub struct ReadyEvent {
     pub token: Token,
     pub readable: bool,
     pub writable: bool,

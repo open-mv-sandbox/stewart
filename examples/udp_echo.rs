@@ -1,21 +1,21 @@
 mod utils;
 
-use std::{net::SocketAddr, rc::Rc};
+use std::net::SocketAddr;
 
 use anyhow::Error;
 use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
-use stewart_mio::{net::udp, Registry};
+use stewart_mio::{net::udp, Registry, RegistryHandle};
 use tracing::{event, Level};
 
 fn main() -> Result<(), Error> {
     utils::init_logging();
 
     let mut world = World::default();
-    let registry = Rc::new(Registry::new()?);
+    let registry = Registry::new()?;
 
     // Start the actor
-    let actor = Service::new(&mut world, &registry)?;
+    let actor = Service::new(&mut world, registry.handle())?;
     let server_addr = actor.server_addr;
     let client_send = actor.client_sender.clone();
     world.insert("echo-example", actor)?;
@@ -51,7 +51,7 @@ struct Service {
 }
 
 impl Service {
-    pub fn new(world: &mut World, registry: &Rc<Registry>) -> Result<Self, Error> {
+    pub fn new(world: &mut World, registry: RegistryHandle) -> Result<Self, Error> {
         // Start the listen port
         let (server_mailbox, server_sender) = mailbox();
         let (server_sender, info) = udp::bind(

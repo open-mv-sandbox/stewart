@@ -1,6 +1,6 @@
 mod utils;
 
-use std::{fs, rc::Rc};
+use std::fs;
 
 use anyhow::{Context, Error};
 use rustls::{Certificate, PrivateKey};
@@ -12,12 +12,18 @@ fn main() -> Result<(), Error> {
     utils::init_logging();
 
     let mut world = World::default();
-    let registry = Rc::new(Registry::new()?);
+    let registry = Registry::new()?;
 
     // Set up the QUIC server
     let (certificate, private_key) = generate_certificate()?;
     let addr = "0.0.0.0:1234".parse()?;
-    stewart_quic::endpoint(&mut world, registry.clone(), addr, certificate, private_key)?;
+    stewart_quic::endpoint(
+        &mut world,
+        registry.handle(),
+        addr,
+        certificate,
+        private_key,
+    )?;
 
     // Run the event loop
     stewart_mio::run_event_loop(&mut world, &registry)?;

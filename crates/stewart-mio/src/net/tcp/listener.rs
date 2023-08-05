@@ -1,14 +1,14 @@
-use std::{net::SocketAddr, rc::Rc};
+use std::net::SocketAddr;
 
 use anyhow::Error;
-use mio::Interest;
+use mio::{Interest, Token};
 use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
 use tracing::{event, instrument, Level};
 
 use crate::{
     net::{self, check_io},
-    Ready, Registry,
+    ReadyEvent, RegistryHandle,
 };
 
 pub enum ListenerAction {
@@ -37,7 +37,7 @@ pub struct ConnectedEvent {
 #[instrument("tcp::listen", skip_all)]
 pub fn bind(
     world: &mut World,
-    registry: Rc<Registry>,
+    registry: RegistryHandle,
     addr: SocketAddr,
     event_sender: Sender<ListenerEvent>,
 ) -> Result<(Sender<ListenerAction>, ListenerInfo), Error> {
@@ -48,17 +48,18 @@ pub fn bind(
 }
 
 struct Service {
-    registry: Rc<Registry>,
+    registry: RegistryHandle,
     actions_mailbox: Mailbox<ListenerAction>,
-    ready_mailbox: Mailbox<Ready>,
+    ready_mailbox: Mailbox<ReadyEvent>,
     event_sender: Sender<ListenerEvent>,
 
     listener: mio::net::TcpListener,
+    token: Token,
 }
 
 impl Service {
     fn new(
-        registry: Rc<Registry>,
+        registry: RegistryHandle,
         addr: SocketAddr,
         event_sender: Sender<ListenerEvent>,
     ) -> Result<(Self, Sender<ListenerAction>, ListenerInfo), Error> {
@@ -72,13 +73,7 @@ impl Service {
         let local_addr = listener.local_addr()?;
 
         // Register the socket for ready events
-        let listener_token = registry.token();
-        registry.register(
-            &mut listener,
-            listener_token,
-            Interest::READABLE,
-            ready_sender.clone(),
-        )?;
+        let token = registry.register(&mut listener, Interest::READABLE, ready_sender.clone())?;
 
         let value = Self {
             registry,
@@ -87,6 +82,7 @@ impl Service {
             event_sender,
 
             listener,
+            token,
         };
         let listener = ListenerInfo { local_addr };
         Ok((value, actions_sender, listener))
@@ -96,7 +92,10 @@ impl Service {
 impl Drop for Service {
     fn drop(&mut self) {
         event!(Level::DEBUG, "closing");
+
         let _ = self.event_sender.send(ListenerEvent::Closed);
+
+        self.registry.deregister(&mut self.listener, self.token);
     }
 }
 

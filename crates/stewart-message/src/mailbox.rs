@@ -10,6 +10,8 @@ use thiserror::Error;
 use stewart::Signal;
 
 /// Create a new `Mailbox` with a paired `Sender`.
+///
+/// TODO: Just start by creating a mailbox then calling `sender` to create instead.
 pub fn mailbox<M>() -> (Mailbox<M>, Sender<M>) {
     let inner = MailboxInner {
         queue: VecDeque::new(),

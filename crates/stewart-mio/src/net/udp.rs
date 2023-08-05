@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, net::SocketAddr, rc::Rc, time::Instant};
+use std::{collections::VecDeque, net::SocketAddr, time::Instant};
 
 use anyhow::Error;
 use mio::{Interest, Token};
@@ -6,7 +6,10 @@ use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
 use tracing::{event, instrument, Level};
 
-use crate::{net::check_io, registry::Ready, Registry};
+use crate::{
+    net::check_io,
+    registry::{ReadyEvent, RegistryHandle},
+};
 
 pub enum Action {
     /// Send a packet to a peer.
@@ -33,7 +36,7 @@ pub struct SocketInfo {
 #[instrument("udp::bind", skip_all)]
 pub fn bind(
     world: &mut World,
-    registry: Rc<Registry>,
+    registry: RegistryHandle,
     addr: SocketAddr,
     event_sender: Sender<RecvEvent>,
 ) -> Result<(Sender<Action>, SocketInfo), Error> {
@@ -45,10 +48,10 @@ pub fn bind(
 
 struct Service {
     action_mailbox: Mailbox<Action>,
-    ready_mailbox: Mailbox<Ready>,
+    ready_mailbox: Mailbox<ReadyEvent>,
     event_sender: Sender<RecvEvent>,
 
-    registry: Rc<Registry>,
+    registry: RegistryHandle,
     socket: mio::net::UdpSocket,
     token: Token,
 
@@ -58,7 +61,7 @@ struct Service {
 
 impl Service {
     fn new(
-        registry: Rc<Registry>,
+        registry: RegistryHandle,
         addr: SocketAddr,
         event_sender: Sender<RecvEvent>,
     ) -> Result<(Self, Sender<Action>, SocketInfo), Error> {
@@ -70,8 +73,7 @@ impl Service {
         let local_addr = socket.local_addr()?;
 
         // Register the socket for ready events
-        let token = registry.token();
-        registry.register(&mut socket, token, Interest::READABLE, ready_sender)?;
+        let token = registry.register(&mut socket, Interest::READABLE, ready_sender)?;
 
         let value = Self {
             action_mailbox: action_mailbox.clone(),
@@ -226,12 +228,7 @@ impl Service {
 
 impl Drop for Service {
     fn drop(&mut self) {
-        event!(Level::DEBUG, "dropping socket");
-
-        // Cleanup the current socket from the registry
-        let result = self.registry.deregister(&mut self.socket);
-        if let Err(error) = result {
-            event!(Level::ERROR, ?error, "failed to deregister");
-        }
+        event!(Level::DEBUG, "closing");
+        self.registry.deregister(&mut self.socket, self.token);
     }
 }

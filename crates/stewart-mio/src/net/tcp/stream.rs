@@ -1,7 +1,6 @@
 use std::{
     collections::VecDeque,
     io::{ErrorKind, Read, Write},
-    rc::Rc,
 };
 
 use anyhow::Error;
@@ -10,7 +9,7 @@ use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
 use tracing::{event, Level};
 
-use crate::{Ready, Registry};
+use crate::{ReadyEvent, RegistryHandle};
 
 pub enum StreamAction {
     /// Send a data to the stream.
@@ -36,7 +35,7 @@ pub struct RecvEvent {
 
 pub(crate) fn open(
     world: &mut World,
-    registry: Rc<Registry>,
+    registry: RegistryHandle,
     stream: mio::net::TcpStream,
     event_sender: Sender<StreamEvent>,
 ) -> Result<Sender<StreamAction>, Error> {
@@ -47,11 +46,11 @@ pub(crate) fn open(
 }
 
 struct Service {
+    registry: RegistryHandle,
     action_mailbox: Mailbox<StreamAction>,
-    ready_mailbox: Mailbox<Ready>,
+    ready_mailbox: Mailbox<ReadyEvent>,
     event_sender: Sender<StreamEvent>,
 
-    registry: Rc<Registry>,
     stream: mio::net::TcpStream,
     token: Token,
 
@@ -60,7 +59,7 @@ struct Service {
 
 impl Service {
     fn new(
-        registry: Rc<Registry>,
+        registry: RegistryHandle,
         mut stream: mio::net::TcpStream,
         event_sender: Sender<StreamEvent>,
     ) -> Result<(Self, Sender<StreamAction>), Error> {
@@ -70,15 +69,14 @@ impl Service {
         let (ready_mailbox, ready_sender) = mailbox();
 
         // Register for mio events
-        let token = registry.token();
-        registry.register(&mut stream, token, Interest::READABLE, ready_sender)?;
+        let token = registry.register(&mut stream, Interest::READABLE, ready_sender)?;
 
         let value = Service {
+            registry,
             action_mailbox,
             ready_mailbox,
             event_sender,
 
-            registry,
             stream,
             token,
 
@@ -90,8 +88,11 @@ impl Service {
 
 impl Drop for Service {
     fn drop(&mut self) {
-        event!(Level::DEBUG, "closing stream");
+        event!(Level::DEBUG, "closing");
+
         let _ = self.event_sender.send(StreamEvent::Closed);
+
+        self.registry.deregister(&mut self.stream, self.token);
     }
 }
 

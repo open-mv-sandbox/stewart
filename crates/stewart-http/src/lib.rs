@@ -1,14 +1,14 @@
-use std::{io::Write, net::SocketAddr, rc::Rc};
+use std::{io::Write, net::SocketAddr};
 
 use anyhow::Error;
 use stewart::{Actor, Context, World};
 use stewart_message::{mailbox, Mailbox, Sender};
-use stewart_mio::{net::tcp, Registry};
+use stewart_mio::{net::tcp, RegistryHandle};
 use tracing::{event, Level};
 
 pub fn listen(
     world: &mut World,
-    registry: Rc<Registry>,
+    registry: RegistryHandle,
     addr: SocketAddr,
     body: String,
 ) -> Result<(), Error> {
@@ -35,7 +35,7 @@ struct Connection {
 impl Service {
     fn new(
         world: &mut World,
-        registry: Rc<Registry>,
+        registry: RegistryHandle,
         addr: SocketAddr,
         body: String,
     ) -> Result<Self, Error> {

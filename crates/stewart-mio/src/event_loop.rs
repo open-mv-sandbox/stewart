@@ -1,14 +1,12 @@
-use std::rc::Rc;
-
 use anyhow::Error;
 use mio::{event::Event, Events};
 use stewart::World;
 use tracing::{event, instrument, Level};
 
-use crate::{registry::Ready, Registry};
+use crate::{registry::ReadyEvent, Registry};
 
 #[instrument("mio-event-loop", skip_all)]
-pub fn run_event_loop(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
+pub fn run_event_loop(world: &mut World, registry: &Registry) -> Result<(), Error> {
     // Process pending messages raised from initialization
     event!(Level::TRACE, "processing init messages");
     world.run_until_idle()?;
@@ -19,7 +17,7 @@ pub fn run_event_loop(world: &mut World, registry: &Rc<Registry>) -> Result<(), 
     Ok(())
 }
 
-fn run_poll_loop(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error> {
+fn run_poll_loop(world: &mut World, registry: &Registry) -> Result<(), Error> {
     let mut events = Events::with_capacity(256);
 
     loop {
@@ -41,7 +39,7 @@ fn run_poll_loop(world: &mut World, registry: &Rc<Registry>) -> Result<(), Error
 fn handle(registry: &Registry, event: &Event) -> Result<(), Error> {
     event!(Level::TRACE, "handling mio event");
 
-    let ready = Ready {
+    let ready = ReadyEvent {
         token: event.token(),
         readable: event.is_readable(),
         writable: event.is_writable(),
