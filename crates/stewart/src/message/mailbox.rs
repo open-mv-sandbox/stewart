@@ -77,9 +77,18 @@ impl<M> Mailbox<M> {
         self.inner.borrow_mut().queue.pop_front()
     }
 }
-/// Sending utility, for sending messages to a mailbox.
+
+/// Handle for sending messages to a mailbox.
 pub struct Sender<M> {
     inner: Weak<RefCell<MailboxInner<M>>>,
+}
+
+impl<M> Clone for Sender<M> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
 }
 
 impl<M> Sender<M> {
@@ -109,17 +118,9 @@ impl<M> Sender<M> {
     }
 }
 
-impl<M> Clone for Sender<M> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
 /// Error while sending a message.
 #[derive(Error, Debug)]
-#[error("sending message failed")]
+#[error("failed to send message")]
 pub struct SendError {
     #[from]
     source: Error,

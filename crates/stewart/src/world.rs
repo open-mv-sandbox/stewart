@@ -139,7 +139,7 @@ impl Drop for World {
 
 /// Error while processing actors.
 #[derive(Error, Debug)]
-#[error("processing world failed")]
+#[error("failed to process world")]
 pub struct ProcessError {
     #[from]
     source: Error,
