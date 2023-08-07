@@ -2,8 +2,10 @@ use std::net::SocketAddr;
 
 use anyhow::Error;
 use mio::{Interest, Token};
-use stewart::{Actor, Context, World};
-use stewart_message::{mailbox, Mailbox, Sender};
+use stewart::{
+    message::{Mailbox, Sender},
+    Actor, Context, World,
+};
 use tracing::{event, instrument, Level};
 
 use crate::{
@@ -49,7 +51,7 @@ pub fn bind(
 
 struct Service {
     registry: RegistryHandle,
-    actions_mailbox: Mailbox<ListenerAction>,
+    action_mailbox: Mailbox<ListenerAction>,
     ready_mailbox: Mailbox<ReadyEvent>,
     event_sender: Sender<ListenerEvent>,
 
@@ -65,8 +67,11 @@ impl Service {
     ) -> Result<(Self, Sender<ListenerAction>, ListenerInfo), Error> {
         event!(Level::DEBUG, "binding");
 
-        let (actions_mailbox, actions_sender) = mailbox();
-        let (ready_mailbox, ready_sender) = mailbox();
+        let action_mailbox = Mailbox::default();
+        let ready_mailbox = Mailbox::default();
+
+        let action_sender = action_mailbox.sender();
+        let ready_sender = ready_mailbox.sender();
 
         // Create the socket
         let mut listener = mio::net::TcpListener::bind(addr)?;
@@ -77,7 +82,7 @@ impl Service {
 
         let value = Self {
             registry,
-            actions_mailbox,
+            action_mailbox,
             ready_mailbox,
             event_sender,
 
@@ -85,7 +90,7 @@ impl Service {
             token,
         };
         let listener = ListenerInfo { local_addr };
-        Ok((value, actions_sender, listener))
+        Ok((value, action_sender, listener))
     }
 }
 
@@ -101,7 +106,7 @@ impl Drop for Service {
 
 impl Actor for Service {
     fn register(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        self.actions_mailbox.set_signal(ctx.signal());
+        self.action_mailbox.set_signal(ctx.signal());
         self.ready_mailbox.set_signal(ctx.signal());
         Ok(())
     }
@@ -116,7 +121,7 @@ impl Actor for Service {
             self.on_listener_ready(ctx)?;
         }
 
-        while let Some(_action) = self.actions_mailbox.recv() {
+        while let Some(_action) = self.action_mailbox.recv() {
             ctx.set_stop();
         }
 
@@ -131,9 +136,13 @@ impl Service {
             event!(Level::DEBUG, ?remote_addr, "stream accepted");
 
             // Start actor
-            let (event_mailbox, sender) = mailbox();
-            let actions_sender =
-                net::tcp::stream::open(world, self.registry.clone(), stream, sender)?;
+            let event_mailbox = Mailbox::default();
+            let actions_sender = net::tcp::stream::open(
+                world,
+                self.registry.clone(),
+                stream,
+                event_mailbox.sender(),
+            )?;
 
             // Notify
             // TODO: Temporarily store the stream, until we get a reply truly accepting the stream.

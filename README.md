@@ -8,7 +8,6 @@ Actors, done well.
 
 - [![crates.io](https://img.shields.io/crates/v/stewart.svg?label=stewart)](https://crates.io/crates/stewart) [![docs.rs](https://docs.rs/stewart/badge.svg)](https://docs.rs/stewart/) - Actors, done well
 - `stewart-http` - HTTP implementation for stewart
-- `stewart-message` -  Messaging utilities for stewart
 - `stewart-mio` -  Mio event loop runner for stewart
 - `stewart-quic` - QUIC implementation for stewart, based on quinn-proto
 

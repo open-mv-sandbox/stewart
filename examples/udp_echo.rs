@@ -3,8 +3,10 @@ mod utils;
 use std::net::SocketAddr;
 
 use anyhow::Error;
-use stewart::{Actor, Context, World};
-use stewart_message::{mailbox, Mailbox, Sender};
+use stewart::{
+    message::{Mailbox, Sender},
+    Actor, Context, World,
+};
 use stewart_mio::{net::udp, Registry, RegistryHandle};
 use tracing::{event, Level};
 
@@ -53,20 +55,24 @@ struct Service {
 impl Service {
     pub fn new(world: &mut World, registry: RegistryHandle) -> Result<Self, Error> {
         // Start the listen port
-        let (server_mailbox, server_sender) = mailbox();
+        let server_mailbox = Mailbox::default();
         let (server_sender, info) = udp::bind(
             world,
             registry.clone(),
             "0.0.0.0:1234".parse()?,
-            server_sender,
+            server_mailbox.sender(),
         )?;
         event!(Level::INFO, addr = ?info.local_addr, "listening");
         let server_addr = info.local_addr;
 
         // Start the client port
-        let (client_mailbox, client_sender) = mailbox();
-        let (client_sender, info) =
-            udp::bind(world, registry.clone(), "0.0.0.0:0".parse()?, client_sender)?;
+        let client_mailbox = Mailbox::default();
+        let (client_sender, info) = udp::bind(
+            world,
+            registry.clone(),
+            "0.0.0.0:0".parse()?,
+            client_mailbox.sender(),
+        )?;
         event!(Level::INFO, addr = ?info.local_addr, "sending");
 
         let actor = Service {

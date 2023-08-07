@@ -17,6 +17,5 @@ tracing-test = "0.2.4"
 uuid = "1.4"
 stewart = { version = "0.10.0-dev", path = "./crates/stewart" }
 stewart-http = { version = "0.1.0-dev", path = "./crates/stewart-http" }
-stewart-message = { version = "0.1.0-dev", path = "./crates/stewart-message" }
 stewart-mio = { version = "0.1.0-dev", path = "./crates/stewart-mio" }
 stewart-quic = { version = "0.1.0-dev", path = "./crates/stewart-quic" }

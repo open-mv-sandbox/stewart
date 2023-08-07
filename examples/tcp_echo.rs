@@ -2,8 +2,10 @@ mod utils;
 
 use anyhow::Error;
 use bytes::Bytes;
-use stewart::{Actor, Context, World};
-use stewart_message::{mailbox, Mailbox, Sender};
+use stewart::{
+    message::{Mailbox, Sender},
+    Actor, Context, World,
+};
 use stewart_mio::{
     net::tcp::{self},
     Registry, RegistryHandle,
@@ -40,11 +42,15 @@ struct Connection {
 
 impl Service {
     pub fn new(world: &mut World, registry: RegistryHandle) -> Result<Self, Error> {
-        let (server_mailbox, on_event) = mailbox();
+        let server_mailbox = Mailbox::default();
 
         // Start the listen port
-        let (server_sender, server_info) =
-            tcp::bind(world, registry, "127.0.0.1:1234".parse()?, on_event)?;
+        let (server_sender, server_info) = tcp::bind(
+            world,
+            registry,
+            "127.0.0.1:1234".parse()?,
+            server_mailbox.sender(),
+        )?;
         event!(Level::INFO, addr = ?server_info.local_addr, "listening");
 
         let actor = Service {

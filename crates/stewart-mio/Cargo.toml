@@ -13,7 +13,6 @@ bytes.workspace = true
 mio = { workspace = true, features = ["os-poll", "net"] }
 tracing.workspace = true
 stewart.workspace = true
-stewart-message.workspace = true
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

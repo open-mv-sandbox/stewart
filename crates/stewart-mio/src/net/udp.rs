@@ -3,8 +3,10 @@ use std::{collections::VecDeque, net::SocketAddr, time::Instant};
 use anyhow::Error;
 use bytes::{Bytes, BytesMut};
 use mio::{Interest, Token};
-use stewart::{Actor, Context, World};
-use stewart_message::{mailbox, Mailbox, Sender};
+use stewart::{
+    message::{Mailbox, Sender},
+    Actor, Context, World,
+};
 use tracing::{event, instrument, Level};
 
 use crate::{
@@ -66,8 +68,13 @@ impl Service {
         addr: SocketAddr,
         event_sender: Sender<RecvEvent>,
     ) -> Result<(Self, Sender<Action>, SocketInfo), Error> {
-        let (action_mailbox, action_sender) = mailbox();
-        let (ready, ready_sender) = mailbox();
+        event!(Level::DEBUG, "binding");
+
+        let action_mailbox = Mailbox::default();
+        let ready_mailbox = Mailbox::default();
+
+        let action_sender = action_mailbox.sender();
+        let ready_sender = ready_mailbox.sender();
 
         // Create the socket
         let mut socket = mio::net::UdpSocket::bind(addr)?;
@@ -77,8 +84,8 @@ impl Service {
         let token = registry.register(&mut socket, Interest::READABLE, ready_sender)?;
 
         let value = Self {
-            action_mailbox: action_mailbox.clone(),
-            ready_mailbox: ready.clone(),
+            action_mailbox,
+            ready_mailbox,
             event_sender,
 
             registry,

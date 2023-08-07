@@ -7,6 +7,7 @@
 
 mod actor;
 mod context;
+pub mod message;
 mod signal;
 mod world;
 

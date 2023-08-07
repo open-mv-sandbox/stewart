@@ -4,8 +4,10 @@ use anyhow::Error;
 use bytes::BytesMut;
 use quinn_proto::{DatagramEvent, Endpoint, EndpointConfig, ServerConfig};
 use rustls::{Certificate, PrivateKey};
-use stewart::{Actor, Context, World};
-use stewart_message::{mailbox, Mailbox, Sender};
+use stewart::{
+    message::{Mailbox, Sender},
+    Actor, Context, World,
+};
 use stewart_mio::{net::udp, RegistryHandle};
 use tracing::{event, Level};
 
@@ -53,8 +55,8 @@ impl Service {
         let endpoint = Endpoint::new(Arc::new(config), Some(Arc::new(server_config)), false);
 
         // Bind the UDP socket to listen on
-        let (event_mailbox, event_sender) = mailbox();
-        let (action_sender, _) = udp::bind(world, registry, addr, event_sender)?;
+        let event_mailbox = Mailbox::default();
+        let (action_sender, _) = udp::bind(world, registry, addr, event_mailbox.sender())?;
 
         let value = Service {
             endpoint,

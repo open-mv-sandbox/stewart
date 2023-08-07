@@ -6,8 +6,10 @@ use std::{
 use anyhow::Error;
 use bytes::{Buf, Bytes, BytesMut};
 use mio::{Interest, Token};
-use stewart::{Actor, Context, World};
-use stewart_message::{mailbox, Mailbox, Sender};
+use stewart::{
+    message::{Mailbox, Sender},
+    Actor, Context, World,
+};
 use tracing::{event, Level};
 
 use crate::{ReadyEvent, RegistryHandle};
@@ -67,8 +69,11 @@ impl Service {
     ) -> Result<(Self, Sender<StreamAction>), Error> {
         event!(Level::DEBUG, "opening stream");
 
-        let (action_mailbox, sender) = mailbox();
-        let (ready_mailbox, ready_sender) = mailbox();
+        let action_mailbox = Mailbox::default();
+        let ready_mailbox = Mailbox::default();
+
+        let action_sender = action_mailbox.sender();
+        let ready_sender = ready_mailbox.sender();
 
         // Register for mio events
         let token = registry.register(&mut stream, Interest::READABLE, ready_sender)?;
@@ -85,7 +90,7 @@ impl Service {
             queue: VecDeque::new(),
             buffer: BytesMut::new(),
         };
-        Ok((value, sender))
+        Ok((value, action_sender))
     }
 }
 

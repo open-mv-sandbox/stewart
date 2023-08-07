@@ -1,8 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::World;
-use stewart_message::mailbox;
+use stewart::{message::Mailbox, World};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -21,7 +20,7 @@ fn main() -> Result<(), Error> {
     event!(Level::INFO, "sending messages");
 
     // Mailboxes don't need to be associated with an actor.
-    let (mailbox, sender) = mailbox();
+    let mailbox = Mailbox::default();
     mailbox.set_floating();
 
     let action = hello::Action::Greet {
@@ -30,7 +29,7 @@ fn main() -> Result<(), Error> {
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
-        result_sender: sender.clone(),
+        result_sender: mailbox.sender(),
     };
     service.send(message)?;
 
@@ -40,7 +39,7 @@ fn main() -> Result<(), Error> {
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
-        result_sender: sender.clone(),
+        result_sender: mailbox.sender(),
     };
     service.send(message)?;
 
@@ -48,7 +47,7 @@ fn main() -> Result<(), Error> {
     let message = hello::Request {
         id: Uuid::new_v4(),
         action: hello::Action::Stop,
-        result_sender: sender.clone(),
+        result_sender: mailbox.sender(),
     };
     service.send(message)?;
 
@@ -66,15 +65,17 @@ fn main() -> Result<(), Error> {
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
     use anyhow::Error;
-    use stewart::{Actor, Context, World};
-    use stewart_message::{mailbox, Mailbox, Sender};
+    use stewart::{
+        message::{Mailbox, Sender},
+        Actor, Context, World,
+    };
     use tracing::{event, instrument, Level};
 
     /// You can define your public interfaces as a "protocol", which contains just the types
     /// necessary to talk to your service.
     /// This is equivalent to an "interface" or "trait".
     pub mod protocol {
-        use stewart_message::Sender;
+        use stewart::message::Sender;
         use uuid::Uuid;
 
         /// It's good practice to wrap your service's actions in a `Request` type, for adding
@@ -129,13 +130,11 @@ mod hello_service {
     impl Service {
         fn new(name: String) -> (Self, Sender<protocol::Request>) {
             // Mailboxes let you send message around
-            let (mailbox, sender) = mailbox();
+            let mailbox = Mailbox::default();
+            let sender = mailbox.sender();
 
             // Create the actor in the world
-            let actor = Service {
-                name,
-                mailbox: mailbox.clone(),
-            };
+            let actor = Service { name, mailbox };
 
             (actor, sender)
         }

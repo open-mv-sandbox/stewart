@@ -24,12 +24,7 @@ struct Service {}
 
 impl Service {
     pub fn new(world: &mut World, registry: RegistryHandle) -> Result<Self, Error> {
-        stewart_http::listen(
-            world,
-            registry,
-            "127.0.0.1:1234".parse()?,
-            RESPONSE.to_string(),
-        )?;
+        stewart_http::listen(world, registry, "127.0.0.1:1234".parse()?, RESPONSE.into())?;
 
         let actor = Service {};
         Ok(actor)

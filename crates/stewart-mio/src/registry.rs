@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{Context as _, Error};
 use mio::{event::Source, Events, Interest, Poll, Token};
-use stewart_message::Sender;
+use stewart::message::Sender;
 use tracing::{event, Level};
 
 /// Mio context registry.

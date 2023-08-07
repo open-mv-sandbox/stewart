@@ -14,7 +14,6 @@ tracing-subscriber.workspace = true
 uuid = { workspace = true, features = ["v4"] }
 stewart.workspace = true
 stewart-http.workspace = true
-stewart-message.workspace = true
 stewart-mio.workspace = true
 stewart-quic.workspace = true
 

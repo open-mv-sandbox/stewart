@@ -7,24 +7,7 @@ use std::{
 use anyhow::{anyhow, Context as _, Error};
 use thiserror::Error;
 
-use stewart::Signal;
-
-/// Create a new `Mailbox` with a paired `Sender`.
-///
-/// TODO: Just start by creating a mailbox then calling `sender` to create instead.
-pub fn mailbox<M>() -> (Mailbox<M>, Sender<M>) {
-    let inner = MailboxInner {
-        queue: VecDeque::new(),
-        notify: Notify::Pending,
-    };
-    let inner = Rc::new(RefCell::new(inner));
-    let weak = Rc::downgrade(&inner);
-
-    let mailbox = Mailbox { inner };
-    let sender = Sender { inner: weak };
-
-    (mailbox, sender)
-}
+use crate::Signal;
 
 /// Shared *single-threaded* multi-sender multi-receiver message queue.
 ///
@@ -35,14 +18,6 @@ pub fn mailbox<M>() -> (Mailbox<M>, Sender<M>) {
 /// notified.
 pub struct Mailbox<M> {
     inner: Rc<RefCell<MailboxInner<M>>>,
-}
-
-impl<M> Clone for Mailbox<M> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
 }
 
 struct MailboxInner<M> {
@@ -56,7 +31,35 @@ enum Notify {
     Floating,
 }
 
+impl<M> Default for Mailbox<M> {
+    fn default() -> Self {
+        let inner = MailboxInner {
+            queue: VecDeque::new(),
+            notify: Notify::Pending,
+        };
+
+        Self {
+            inner: Rc::new(RefCell::new(inner)),
+        }
+    }
+}
+
+impl<M> Clone for Mailbox<M> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
 impl<M> Mailbox<M> {
+    /// Create a new `Sender` that senders to this mailbox.
+    pub fn sender(&self) -> Sender<M> {
+        Sender {
+            inner: Rc::downgrade(&self.inner),
+        }
+    }
+
     /// Set the `Signal` to be sent when this mailbox receives a message.
     ///
     /// Only one signal can be set at a time, setting this will remove the previous value.

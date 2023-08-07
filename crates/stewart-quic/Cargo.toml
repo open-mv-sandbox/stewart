@@ -14,5 +14,4 @@ quinn-proto.workspace = true
 rustls.workspace = true
 tracing.workspace = true
 stewart.workspace = true
-stewart-message.workspace = true
 stewart-mio.workspace = true
