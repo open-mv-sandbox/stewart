@@ -11,7 +11,7 @@ mod signal;
 mod world;
 
 pub use self::{
-    actor::Actor,
+    actor::{Actor, Meta},
     signal::Signal,
-    world::{Id, ProcessError, World},
+    world::{ProcessError, World},
 };

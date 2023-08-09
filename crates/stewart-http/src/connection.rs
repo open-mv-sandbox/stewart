@@ -1,6 +1,6 @@
 use anyhow::Error;
 use bytes::{BufMut, Bytes, BytesMut};
-use stewart::{Actor, Id, World};
+use stewart::{Actor, Meta, World};
 use stewart_mio::net::tcp;
 use tracing::{event, Level};
 
@@ -40,12 +40,12 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
-        self.event.event_mailbox.set_signal(world.signal(id));
+    fn register(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+        self.event.event_mailbox.set_signal(meta.signal());
         Ok(())
     }
 
-    fn process(&mut self, _world: &mut World, _id: Id) -> Result<(), Error> {
+    fn process(&mut self, _world: &mut World, _meta: &mut Meta) -> Result<(), Error> {
         while let Some(event) = self.event.event_mailbox.recv() {
             match event {
                 tcp::StreamEvent::Recv(event) => {

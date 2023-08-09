@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{Actor, Id, World};
+use stewart::{Actor, Meta, World};
 use stewart_mio::{Registry, RegistryHandle};
 
 fn main() -> Result<(), Error> {
@@ -32,11 +32,11 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, _id: Id) -> Result<(), Error> {
+    fn register(&mut self, _world: &mut World, _meta: &mut Meta) -> Result<(), Error> {
         Ok(())
     }
 
-    fn process(&mut self, _world: &mut World, _id: Id) -> Result<(), Error> {
+    fn process(&mut self, _world: &mut World, _meta: &mut Meta) -> Result<(), Error> {
         Ok(())
     }
 }

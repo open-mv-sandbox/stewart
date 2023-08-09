@@ -4,7 +4,7 @@ use anyhow::Error;
 use mio::{Interest, Token};
 use stewart::{
     message::{Mailbox, Sender},
-    Actor, Id, World,
+    Actor, Meta, World,
 };
 use tracing::{event, instrument, Level};
 
@@ -105,13 +105,13 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
-        self.action_mailbox.set_signal(world.signal(id));
-        self.ready_mailbox.set_signal(world.signal(id));
+    fn register(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+        self.action_mailbox.set_signal(meta.signal());
+        self.ready_mailbox.set_signal(meta.signal());
         Ok(())
     }
 
-    fn process(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
+    fn process(&mut self, world: &mut World, meta: &mut Meta) -> Result<(), Error> {
         let mut readable = false;
         while let Some(ready) = self.ready_mailbox.recv() {
             readable |= ready.readable;
@@ -122,7 +122,7 @@ impl Actor for Service {
         }
 
         while let Some(_action) = self.action_mailbox.recv() {
-            world.stop(id);
+            meta.set_stop();
         }
 
         Ok(())

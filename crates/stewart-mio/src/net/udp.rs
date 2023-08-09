@@ -5,7 +5,7 @@ use bytes::{Bytes, BytesMut};
 use mio::{Interest, Token};
 use stewart::{
     message::{Mailbox, Sender},
-    Actor, Id, World,
+    Actor, Meta, World,
 };
 use tracing::{event, instrument, Level};
 
@@ -101,15 +101,15 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
-        self.action_mailbox.set_signal(world.signal(id));
-        self.ready_mailbox.set_signal(world.signal(id));
+    fn register(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+        self.action_mailbox.set_signal(meta.signal());
+        self.ready_mailbox.set_signal(meta.signal());
 
         Ok(())
     }
 
-    fn process(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
-        self.poll_actions(world, id)?;
+    fn process(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+        self.poll_actions(meta)?;
         self.poll_ready()?;
 
         Ok(())
@@ -117,11 +117,11 @@ impl Actor for Service {
 }
 
 impl Service {
-    fn poll_actions(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
+    fn poll_actions(&mut self, meta: &mut Meta) -> Result<(), Error> {
         while let Some(message) = self.action_mailbox.recv() {
             match message {
                 Action::Send(packet) => self.on_action_send(packet)?,
-                Action::Close => world.stop(id),
+                Action::Close => meta.set_stop(),
             }
         }
 

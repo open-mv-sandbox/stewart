@@ -8,7 +8,7 @@ use bytes::{Buf, Bytes, BytesMut};
 use mio::{Interest, Token};
 use stewart::{
     message::{Mailbox, Sender},
-    Actor, Id, World,
+    Actor, Meta, World,
 };
 use tracing::{event, Level};
 
@@ -105,34 +105,34 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
-        self.action_mailbox.set_signal(world.signal(id));
-        self.ready_mailbox.set_signal(world.signal(id));
+    fn register(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+        self.action_mailbox.set_signal(meta.signal());
+        self.ready_mailbox.set_signal(meta.signal());
         Ok(())
     }
 
-    fn process(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
-        self.poll_actions(world, id)?;
-        self.poll_ready(world, id)?;
+    fn process(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+        self.poll_actions(meta)?;
+        self.poll_ready(meta)?;
 
         Ok(())
     }
 }
 
 impl Service {
-    fn poll_actions(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
+    fn poll_actions(&mut self, meta: &mut Meta) -> Result<(), Error> {
         // Handle actions
         while let Some(action) = self.action_mailbox.recv() {
             match action {
                 StreamAction::Send(action) => self.on_action_send(action)?,
-                StreamAction::Close => world.stop(id),
+                StreamAction::Close => meta.set_stop(),
             }
         }
 
         Ok(())
     }
 
-    fn poll_ready(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
+    fn poll_ready(&mut self, meta: &mut Meta) -> Result<(), Error> {
         // Handle ready
         let mut readable = false;
         let mut writable = false;
@@ -142,7 +142,7 @@ impl Service {
         }
 
         if readable {
-            self.on_ready_readable(world, id)?;
+            self.on_ready_readable(meta)?;
         }
 
         if writable {
@@ -152,7 +152,7 @@ impl Service {
         Ok(())
     }
 
-    fn on_ready_readable(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
+    fn on_ready_readable(&mut self, meta: &mut Meta) -> Result<(), Error> {
         // Make sure we have at least a minimum amount of buffer space left
         if self.buffer.len() < 1024 {
             self.buffer.resize(2048, 0);
@@ -197,7 +197,7 @@ impl Service {
 
         // If the stream got closed, stop the actor
         if closed {
-            world.stop(id);
+            meta.set_stop();
         }
 
         Ok(())

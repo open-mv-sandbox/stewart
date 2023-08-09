@@ -67,7 +67,7 @@ mod hello_service {
     use anyhow::Error;
     use stewart::{
         message::{Mailbox, Sender},
-        Actor, Id, World,
+        Actor, Meta, World,
     };
     use tracing::{event, instrument, Level};
 
@@ -141,15 +141,15 @@ mod hello_service {
     }
 
     impl Actor for Service {
-        fn register(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
+        fn register(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
             // To wake up our actor when a message gets sent, register it with the mailbox for
             // notification
-            self.mailbox.set_signal(world.signal(id));
+            self.mailbox.set_signal(meta.signal());
 
             Ok(())
         }
 
-        fn process(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
+        fn process(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
             // Process messages on the mailbox
@@ -159,7 +159,7 @@ mod hello_service {
                         event!(Level::INFO, "Hello \"{}\", from {}!", name, self.name);
                     }
                     protocol::Action::Stop => {
-                        world.stop(id);
+                        meta.set_stop();
                     }
                 }
 

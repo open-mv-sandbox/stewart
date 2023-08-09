@@ -4,7 +4,7 @@ use anyhow::Error;
 use bytes::Bytes;
 use stewart::{
     message::{Mailbox, Sender},
-    Actor, Id, World,
+    Actor, Meta, World,
 };
 use stewart_mio::{
     net::tcp::{self},
@@ -63,13 +63,13 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
-        self.server_mailbox.set_signal(world.signal(id));
+    fn register(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+        self.server_mailbox.set_signal(meta.signal());
         Ok(())
     }
 
-    fn process(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
-        self.poll_listener(world, id)?;
+    fn process(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+        self.poll_listener(meta)?;
         self.poll_connections()?;
 
         Ok(())
@@ -77,7 +77,7 @@ impl Actor for Service {
 }
 
 impl Service {
-    fn poll_listener(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
+    fn poll_listener(&mut self, meta: &mut Meta) -> Result<(), Error> {
         while let Some(event) = self.server_mailbox.recv() {
             match event {
                 tcp::ListenerEvent::Connected(event) => {
@@ -89,7 +89,7 @@ impl Service {
                     event.actions_sender.send(tcp::StreamAction::Send(action))?;
 
                     // Keep track of the stream
-                    event.event_mailbox.set_signal(world.signal(id));
+                    event.event_mailbox.set_signal(meta.signal());
                     let connection = Connection {
                         event,
                         pending: Vec::new(),
@@ -97,7 +97,7 @@ impl Service {
                     };
                     self.connections.push(connection);
                 }
-                tcp::ListenerEvent::Closed => world.stop(id),
+                tcp::ListenerEvent::Closed => meta.set_stop(),
             }
         }
 
