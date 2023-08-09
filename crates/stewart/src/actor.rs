@@ -1,13 +1,14 @@
 use anyhow::Error;
 
-use crate::Context;
+use crate::{Id, World};
 
-/// Actor processing implementation trait.
+/// Actor identity and implementation trait.
 pub trait Actor: 'static {
     /// Called when an actor is inserted into a `World`.
     ///
     /// This is useful to receive the `Signal` for this actor.
-    fn register(&mut self, _ctx: &mut Context) -> Result<(), Error> {
+    #[allow(unused_variables)]
+    fn register(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
         Ok(())
     }
 
@@ -19,5 +20,5 @@ pub trait Actor: 'static {
     ///
     /// You should *always* prefer this over panicking, as this crashes the entire runtime.
     /// Instead of using `unwrap` or `expect`, use `context` from the `anyhow` crate.
-    fn process(&mut self, ctx: &mut Context) -> Result<(), Error>;
+    fn process(&mut self, world: &mut World, id: Id) -> Result<(), Error>;
 }

@@ -1,15 +1,18 @@
+use std::collections::VecDeque;
+
 use anyhow::{Context as _, Error};
 use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, instrument, span, Level};
 
-use crate::{signal::SignalReceiver, Actor, Context, Signal};
+use crate::{signal::SignalReceiver, Actor, Signal};
 
 /// Thread-local actor tracking and execution system.
 #[derive(Default)]
 pub struct World {
     actors: Arena<ActorEntry>,
     receiver: SignalReceiver,
+    pending_stop: VecDeque<Index>,
 }
 
 struct ActorEntry {
@@ -18,15 +21,11 @@ struct ActorEntry {
 }
 
 impl World {
-    pub(crate) fn signal(&self, index: Index) -> Signal {
-        self.receiver.signal(index)
-    }
-
     /// Insert an actor into the world.
     ///
     /// The given `name` will be used in logging.
-    #[instrument("World::create", level = "debug", skip_all)]
-    pub fn insert<A>(&mut self, name: &'static str, actor: A) -> Result<(), Error>
+    #[instrument("World::insert", level = "debug", skip_all)]
+    pub fn insert<A>(&mut self, name: &'static str, actor: A) -> Result<Id, Error>
     where
         A: Actor,
     {
@@ -43,26 +42,42 @@ impl World {
         self.receiver.register(index);
 
         // Call the `start` callback to let the actor bind its `Signal`
-        self.actor_do(index, Actor::register)
+        self.process_actor(index, Actor::register)
             .context("failed to start")?;
 
-        Ok(())
+        Ok(Id { index })
+    }
+
+    /// Schedule an actor to be stopped and removed.
+    pub fn stop(&mut self, id: Id) {
+        self.pending_stop.push_back(id.index);
+    }
+
+    /// Get a `Signal` for an actor.
+    pub fn signal(&self, id: Id) -> Signal {
+        self.receiver.signal(id.index)
     }
 
     /// Process all pending actors, until none are left pending.
     #[instrument("World::run_until_idle", level = "debug", skip_all)]
     pub fn run_until_idle(&mut self) -> Result<(), ProcessError> {
         while let Some(index) = self.receiver.next()? {
-            self.actor_do(index, Actor::process)
+            // Run process step
+            self.process_actor(index, Actor::process)
                 .context("failed to process")?;
+
+            // Handle pending stop actions
+            while let Some(stop) = self.pending_stop.pop_front() {
+                self.process_stop(stop)?;
+            }
         }
 
         Ok(())
     }
 
-    fn actor_do<F>(&mut self, index: Index, f: F) -> Result<(), Error>
+    fn process_actor<F>(&mut self, index: Index, f: F) -> Result<(), Error>
     where
-        F: FnOnce(&mut dyn Actor, &mut Context) -> Result<(), Error>,
+        F: FnOnce(&mut dyn Actor, &mut World, Id) -> Result<(), Error>,
     {
         // Borrow the actor
         let node = self.actors.get_mut(index).context("failed to find actor")?;
@@ -75,21 +90,17 @@ impl World {
         // Process the actor
         event!(Level::TRACE, "calling into actor");
 
-        let mut ctx = Context::actor(self, index);
-
         // Let the actor's implementation process
-        let result = f(actor.as_mut(), &mut ctx);
+        let id = Id { index };
+        let result = f(actor.as_mut(), self, id);
 
         // Check if processing failed
-        let stop = match result {
-            Ok(()) => ctx.stop(),
-            Err(error) => {
-                event!(Level::ERROR, ?error, "error while processing");
+        if let Err(error) = result {
+            event!(Level::ERROR, ?error, "error while calling actor");
 
-                // If a processing error happens, the actor should be stopped.
-                // It's better to stop than to potentially retain inconsistent state.
-                true
-            }
+            // If a processing error happens, the actor should be stopped.
+            // It's better to stop than to potentially retain inconsistent state.
+            self.stop(id);
         };
 
         // Return the actor
@@ -99,16 +110,10 @@ impl World {
             .context("failed to find actor for return")?;
         node.slot = Some(actor);
 
-        // If the actor requested to stop, stop it
-        if stop {
-            self.stop(index)
-                .context("failed to stop actor after error")?;
-        }
-
         Ok(())
     }
 
-    fn stop(&mut self, index: Index) -> Result<(), Error> {
+    fn process_stop(&mut self, index: Index) -> Result<(), Error> {
         event!(Level::DEBUG, "stopping actor");
 
         self.receiver.unregister(index)?;
@@ -135,6 +140,12 @@ impl Drop for World {
             );
         }
     }
+}
+
+/// Identifier of an actor in a world.
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct Id {
+    index: Index,
 }
 
 /// Error while processing actors.

@@ -4,7 +4,7 @@ use anyhow::Error;
 use bytes::Bytes;
 use stewart::{
     message::{Mailbox, Sender},
-    Actor, Context, World,
+    Actor, Id, World,
 };
 use stewart_mio::{net::tcp, RegistryHandle};
 use tracing::{event, Level};
@@ -61,18 +61,18 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, ctx: &mut Context) -> Result<(), Error> {
-        self.listener_mailbox.set_signal(ctx.signal());
+    fn register(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
+        self.listener_mailbox.set_signal(world.signal(id));
         Ok(())
     }
 
-    fn process(&mut self, ctx: &mut Context) -> Result<(), Error> {
+    fn process(&mut self, world: &mut World, id: Id) -> Result<(), Error> {
         while let Some(event) = self.listener_mailbox.recv() {
             match event {
                 tcp::ListenerEvent::Connected(event) => {
-                    connection::open(ctx, event, self.body.clone())?
+                    connection::open(world, event, self.body.clone())?
                 }
-                tcp::ListenerEvent::Closed => ctx.set_stop(),
+                tcp::ListenerEvent::Closed => world.stop(id),
             }
         }
 
