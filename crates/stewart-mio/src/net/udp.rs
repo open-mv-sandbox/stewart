@@ -5,7 +5,7 @@ use bytes::{Bytes, BytesMut};
 use mio::{Interest, Token};
 use stewart::{
     message::{Mailbox, Sender},
-    Actor, Meta, World,
+    Actor, Metadata, World,
 };
 use tracing::{event, instrument, Level};
 
@@ -50,9 +50,9 @@ pub fn bind(
 }
 
 struct Service {
-    action_mailbox: Mailbox<Action>,
-    ready_mailbox: Mailbox<ReadyEvent>,
-    event_sender: Sender<RecvEvent>,
+    actions: Mailbox<Action>,
+    ready: Mailbox<ReadyEvent>,
+    events: Sender<RecvEvent>,
 
     registry: RegistryHandle,
     socket: mio::net::UdpSocket,
@@ -84,9 +84,9 @@ impl Service {
         let token = registry.register(&mut socket, Interest::READABLE, ready_sender)?;
 
         let value = Self {
-            action_mailbox,
-            ready_mailbox,
-            event_sender,
+            actions: action_mailbox,
+            ready: ready_mailbox,
+            events: event_sender,
 
             registry,
             socket,
@@ -101,14 +101,14 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
-        self.action_mailbox.set_signal(meta.signal());
-        self.ready_mailbox.set_signal(meta.signal());
+    fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        self.actions.set_signal(meta.signal());
+        self.ready.set_signal(meta.signal());
 
         Ok(())
     }
 
-    fn process(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+    fn process(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         self.poll_actions(meta)?;
         self.poll_ready()?;
 
@@ -117,8 +117,8 @@ impl Actor for Service {
 }
 
 impl Service {
-    fn poll_actions(&mut self, meta: &mut Meta) -> Result<(), Error> {
-        while let Some(message) = self.action_mailbox.recv() {
+    fn poll_actions(&mut self, meta: &mut Metadata) -> Result<(), Error> {
+        while let Some(message) = self.actions.recv() {
             match message {
                 Action::Send(packet) => self.on_action_send(packet)?,
                 Action::Close => meta.set_stop(),
@@ -151,7 +151,7 @@ impl Service {
         let mut readable = false;
         let mut writable = false;
 
-        while let Some(ready) = self.ready_mailbox.recv() {
+        while let Some(ready) = self.ready.recv() {
             readable |= ready.readable;
             writable |= ready.writable;
         }
@@ -199,7 +199,7 @@ impl Service {
             arrived,
             data,
         };
-        self.event_sender.send(packet)?;
+        self.events.send(packet)?;
 
         Ok(true)
     }

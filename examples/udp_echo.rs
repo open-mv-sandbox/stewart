@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 use anyhow::Error;
 use stewart::{
     message::{Mailbox, Sender},
-    Actor, Meta, World,
+    Actor, Metadata, World,
 };
 use stewart_mio::{net::udp, Registry, RegistryHandle};
 use tracing::{event, Level};
@@ -88,14 +88,14 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+    fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         self.server_mailbox.set_signal(meta.signal());
         self.client_mailbox.set_signal(meta.signal());
 
         Ok(())
     }
 
-    fn process(&mut self, _world: &mut World, _meta: &mut Meta) -> Result<(), Error> {
+    fn process(&mut self, _world: &mut World, _meta: &mut Metadata) -> Result<(), Error> {
         while let Some(packet) = self.server_mailbox.recv() {
             let data = std::str::from_utf8(&packet.data)?;
             event!(Level::INFO, data, "server received packet");

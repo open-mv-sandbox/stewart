@@ -3,7 +3,7 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, instrument, span, Level};
 
-use crate::{signal::SignalReceiver, Actor, Meta};
+use crate::{signal::SignalReceiver, Actor, Metadata};
 
 /// Thread-local actor tracking and execution system.
 #[derive(Default)]
@@ -57,26 +57,26 @@ impl World {
         self.receiver.register(index);
 
         // Call the `start` callback to let the actor bind its `Signal`
-        self.process_actor(index, Actor::register)
+        self.call_actor(index, Actor::register)
             .context("failed to start")?;
 
         Ok(())
     }
 
     /// Process all pending actors, until none are left pending.
-    #[instrument("World::run_until_idle", level = "debug", skip_all)]
-    pub fn run_until_idle(&mut self) -> Result<(), ProcessError> {
+    #[instrument("World::process", level = "debug", skip_all)]
+    pub fn process(&mut self) -> Result<(), ProcessError> {
         while let Some(index) = self.receiver.next()? {
-            self.process_actor(index, Actor::process)
+            self.call_actor(index, Actor::process)
                 .context("failed to process")?;
         }
 
         Ok(())
     }
 
-    fn process_actor<F>(&mut self, index: Index, f: F) -> Result<(), Error>
+    fn call_actor<F>(&mut self, index: Index, f: F) -> Result<(), Error>
     where
-        F: FnOnce(&mut dyn Actor, &mut World, &mut Meta) -> Result<(), Error>,
+        F: FnOnce(&mut dyn Actor, &mut World, &mut Metadata) -> Result<(), Error>,
     {
         let (name, mut actor) = self.borrow(index)?;
 
@@ -87,7 +87,7 @@ impl World {
         // Let the actor's implementation process
         event!(Level::TRACE, "calling actor");
         let signal = self.receiver.signal(index);
-        let mut meta = Meta::new(signal);
+        let mut meta = Metadata::new(signal);
         let result = f(actor.as_mut(), self, &mut meta);
 
         // Check if processing failed
@@ -103,7 +103,7 @@ impl World {
 
         // Stop if necessary
         if meta.stop() {
-            self.process_stop(index)?;
+            self.stop(index)?;
         }
 
         Ok(())
@@ -126,7 +126,7 @@ impl World {
         Ok(())
     }
 
-    fn process_stop(&mut self, index: Index) -> Result<(), Error> {
+    fn stop(&mut self, index: Index) -> Result<(), Error> {
         event!(Level::DEBUG, "stopping actor");
 
         self.receiver.unregister(index)?;

@@ -9,7 +9,7 @@ use crate::{registry::ReadyEvent, Registry};
 pub fn run_event_loop(world: &mut World, registry: &Registry) -> Result<(), Error> {
     // Process pending messages raised from initialization
     event!(Level::TRACE, "processing init messages");
-    world.run_until_idle()?;
+    world.process()?;
 
     // Run the inner mio loop
     run_poll_loop(world, registry)?;
@@ -32,7 +32,7 @@ fn run_poll_loop(world: &mut World, registry: &Registry) -> Result<(), Error> {
         // Process all pending actor messages
         // This will likely start with the ready messages
         event!(Level::TRACE, "processing poll step messages");
-        world.run_until_idle()?;
+        world.process()?;
     }
 }
 

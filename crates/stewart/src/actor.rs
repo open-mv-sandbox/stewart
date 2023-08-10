@@ -3,33 +3,33 @@ use anyhow::Error;
 use crate::{Signal, World};
 
 /// Actor identity and implementation trait.
+///
+/// Implementations can return `Err` to signal a fatal error to the system.
+/// If this happens, the actor will be stopped and cleaned up appropriately to protect against
+/// inconsistent state.
+///
+/// You should *always* prefer this over panicking, as this crashes the entire runtime.
+/// Instead of using `unwrap` or `expect`, use `context` from the `anyhow` crate.
 pub trait Actor: 'static {
     /// Called when an actor is inserted into a `World`.
     ///
     /// This is useful to receive the `Signal` for this actor.
     #[allow(unused_variables)]
-    fn register(&mut self, world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         Ok(())
     }
 
-    /// Perform a processing step.
-    ///
-    /// This function can return `Err` to signal a fatal error to the system.
-    /// If this happens, the actor will be stopped and cleaned up appropriately to protect against
-    /// inconsistent state.
-    ///
-    /// You should *always* prefer this over panicking, as this crashes the entire runtime.
-    /// Instead of using `unwrap` or `expect`, use `context` from the `anyhow` crate.
-    fn process(&mut self, world: &mut World, meta: &mut Meta) -> Result<(), Error>;
+    /// Perform a processing step, after being signalled.
+    fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error>;
 }
 
 /// Metadata of an `Actor` in a `World`.
-pub struct Meta {
+pub struct Metadata {
     signal: Signal,
     stop: bool,
 }
 
-impl Meta {
+impl Metadata {
     pub(crate) fn new(signal: Signal) -> Self {
         Self {
             signal,

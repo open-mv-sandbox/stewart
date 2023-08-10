@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{Actor, Meta, World};
+use stewart::{Actor, Metadata, World};
 use stewart_mio::{Registry, RegistryHandle};
 
 fn main() -> Result<(), Error> {
@@ -24,7 +24,8 @@ struct Service {}
 
 impl Service {
     pub fn new(world: &mut World, registry: RegistryHandle) -> Result<Self, Error> {
-        stewart_http::listen(world, registry, "127.0.0.1:1234".parse()?, RESPONSE.into())?;
+        let addr = "127.0.0.1:1234".parse()?;
+        stewart_http::listen(world, registry, addr)?;
 
         let actor = Service {};
         Ok(actor)
@@ -32,13 +33,13 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, _meta: &mut Meta) -> Result<(), Error> {
+    fn register(&mut self, _world: &mut World, _meta: &mut Metadata) -> Result<(), Error> {
         Ok(())
     }
 
-    fn process(&mut self, _world: &mut World, _meta: &mut Meta) -> Result<(), Error> {
+    fn process(&mut self, _world: &mut World, _meta: &mut Metadata) -> Result<(), Error> {
         Ok(())
     }
 }
 
-const RESPONSE: &str = "<!DOCTYPE html><html><body><h1>Hello, World!</h1></body></html>";
+//const RESPONSE: &str = "<!DOCTYPE html><html><body><h1>Hello, World!</h1></body></html>";

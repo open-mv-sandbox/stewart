@@ -52,7 +52,7 @@ fn main() -> Result<(), Error> {
     service.send(message)?;
 
     // Process messages
-    world.run_until_idle()?;
+    world.process()?;
 
     // We can receive messages outside actors by just checking
     while let Some(uuid) = mailbox.recv() {
@@ -67,7 +67,7 @@ mod hello_service {
     use anyhow::Error;
     use stewart::{
         message::{Mailbox, Sender},
-        Actor, Meta, World,
+        Actor, Metadata, World,
     };
     use tracing::{event, instrument, Level};
 
@@ -141,7 +141,7 @@ mod hello_service {
     }
 
     impl Actor for Service {
-        fn register(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+        fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
             // To wake up our actor when a message gets sent, register it with the mailbox for
             // notification
             self.mailbox.set_signal(meta.signal());
@@ -149,7 +149,7 @@ mod hello_service {
             Ok(())
         }
 
-        fn process(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+        fn process(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
             // Process messages on the mailbox

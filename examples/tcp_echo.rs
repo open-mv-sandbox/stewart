@@ -4,7 +4,7 @@ use anyhow::Error;
 use bytes::Bytes;
 use stewart::{
     message::{Mailbox, Sender},
-    Actor, Meta, World,
+    Actor, Metadata, World,
 };
 use stewart_mio::{
     net::tcp::{self},
@@ -63,12 +63,12 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+    fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         self.server_mailbox.set_signal(meta.signal());
         Ok(())
     }
 
-    fn process(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+    fn process(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         self.poll_listener(meta)?;
         self.poll_connections()?;
 
@@ -77,7 +77,7 @@ impl Actor for Service {
 }
 
 impl Service {
-    fn poll_listener(&mut self, meta: &mut Meta) -> Result<(), Error> {
+    fn poll_listener(&mut self, meta: &mut Metadata) -> Result<(), Error> {
         while let Some(event) = self.server_mailbox.recv() {
             match event {
                 tcp::ListenerEvent::Connected(event) => {
@@ -86,10 +86,10 @@ impl Service {
                     // Send a greeting message
                     let data: Bytes = "HELLO WORLD\n".into();
                     let action = tcp::SendAction { data };
-                    event.actions_sender.send(tcp::StreamAction::Send(action))?;
+                    event.actions.send(tcp::StreamAction::Send(action))?;
 
                     // Keep track of the stream
-                    event.event_mailbox.set_signal(meta.signal());
+                    event.events.set_signal(meta.signal());
                     let connection = Connection {
                         event,
                         pending: Vec::new(),
@@ -106,7 +106,7 @@ impl Service {
 
     fn poll_connections(&mut self) -> Result<(), Error> {
         for connection in &mut self.connections {
-            while let Some(event) = connection.event.event_mailbox.recv() {
+            while let Some(event) = connection.event.events.recv() {
                 match event {
                     tcp::StreamEvent::Recv(event) => {
                         event!(Level::INFO, bytes = event.data.len(), "received data");
@@ -127,7 +127,7 @@ impl Service {
                     let reply = format!("HELLO, \"{}\"!\n", pending.trim());
                     let packet = tcp::SendAction { data: reply.into() };
                     let message = tcp::StreamAction::Send(packet);
-                    connection.event.actions_sender.send(message)?;
+                    connection.event.actions.send(message)?;
                 }
             }
         }

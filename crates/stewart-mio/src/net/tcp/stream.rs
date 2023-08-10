@@ -8,7 +8,7 @@ use bytes::{Buf, Bytes, BytesMut};
 use mio::{Interest, Token};
 use stewart::{
     message::{Mailbox, Sender},
-    Actor, Meta, World,
+    Actor, Metadata, World,
 };
 use tracing::{event, Level};
 
@@ -105,13 +105,13 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+    fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         self.action_mailbox.set_signal(meta.signal());
         self.ready_mailbox.set_signal(meta.signal());
         Ok(())
     }
 
-    fn process(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+    fn process(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         self.poll_actions(meta)?;
         self.poll_ready(meta)?;
 
@@ -120,7 +120,7 @@ impl Actor for Service {
 }
 
 impl Service {
-    fn poll_actions(&mut self, meta: &mut Meta) -> Result<(), Error> {
+    fn poll_actions(&mut self, meta: &mut Metadata) -> Result<(), Error> {
         // Handle actions
         while let Some(action) = self.action_mailbox.recv() {
             match action {
@@ -132,7 +132,7 @@ impl Service {
         Ok(())
     }
 
-    fn poll_ready(&mut self, meta: &mut Meta) -> Result<(), Error> {
+    fn poll_ready(&mut self, meta: &mut Metadata) -> Result<(), Error> {
         // Handle ready
         let mut readable = false;
         let mut writable = false;
@@ -152,7 +152,7 @@ impl Service {
         Ok(())
     }
 
-    fn on_ready_readable(&mut self, meta: &mut Meta) -> Result<(), Error> {
+    fn on_ready_readable(&mut self, meta: &mut Metadata) -> Result<(), Error> {
         // Make sure we have at least a minimum amount of buffer space left
         if self.buffer.len() < 1024 {
             self.buffer.resize(2048, 0);

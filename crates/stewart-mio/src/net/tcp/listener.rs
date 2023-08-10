@@ -4,12 +4,12 @@ use anyhow::Error;
 use mio::{Interest, Token};
 use stewart::{
     message::{Mailbox, Sender},
-    Actor, Meta, World,
+    Actor, Metadata, World,
 };
 use tracing::{event, instrument, Level};
 
 use crate::{
-    net::{self, check_io},
+    net::{check_io, tcp},
     ReadyEvent, RegistryHandle,
 };
 
@@ -28,8 +28,8 @@ pub enum ListenerEvent {
 }
 
 pub struct ConnectedEvent {
-    pub event_mailbox: Mailbox<net::tcp::StreamEvent>,
-    pub actions_sender: Sender<net::tcp::StreamAction>,
+    pub events: Mailbox<tcp::StreamEvent>,
+    pub actions: Sender<tcp::StreamAction>,
 }
 
 /// Open a TCP stream listener on the given address.
@@ -105,13 +105,13 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+    fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         self.action_mailbox.set_signal(meta.signal());
         self.ready_mailbox.set_signal(meta.signal());
         Ok(())
     }
 
-    fn process(&mut self, world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+    fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         let mut readable = false;
         while let Some(ready) = self.ready_mailbox.recv() {
             readable |= ready.readable;
@@ -137,19 +137,15 @@ impl Service {
 
             // Start actor
             let event_mailbox = Mailbox::default();
-            let actions_sender = net::tcp::stream::open(
-                world,
-                self.registry.clone(),
-                stream,
-                event_mailbox.sender(),
-            )?;
+            let actions_sender =
+                tcp::stream::open(world, self.registry.clone(), stream, event_mailbox.sender())?;
 
             // Notify
             // TODO: Temporarily store the stream, until we get a reply truly accepting the stream.
             //  This allows the caller to screen IPs and related data.
             let event = ConnectedEvent {
-                actions_sender,
-                event_mailbox,
+                actions: actions_sender,
+                events: event_mailbox,
             };
             self.event_sender.send(ListenerEvent::Connected(event))?;
         }

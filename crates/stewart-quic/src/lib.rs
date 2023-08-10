@@ -6,7 +6,7 @@ use quinn_proto::{DatagramEvent, Endpoint, EndpointConfig, ServerConfig};
 use rustls::{Certificate, PrivateKey};
 use stewart::{
     message::{Mailbox, Sender},
-    Actor, Meta, World,
+    Actor, Metadata, World,
 };
 use stewart_mio::{net::udp, RegistryHandle};
 use tracing::{event, Level};
@@ -68,12 +68,12 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, meta: &mut Meta) -> Result<(), Error> {
+    fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         self.event_mailbox.set_signal(meta.signal());
         Ok(())
     }
 
-    fn process(&mut self, _world: &mut World, _meta: &mut Meta) -> Result<(), Error> {
+    fn process(&mut self, _world: &mut World, _meta: &mut Metadata) -> Result<(), Error> {
         while let Some(packet) = self.event_mailbox.recv() {
             event!(Level::TRACE, "received packet");
 
