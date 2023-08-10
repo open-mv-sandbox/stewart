@@ -3,5 +3,5 @@ mod stream;
 
 pub use self::{
     listener::{bind, ConnectedEvent, ListenerAction, ListenerEvent},
-    stream::{RecvEvent, SendAction, StreamAction, StreamEvent},
+    stream::{ConnectionAction, ConnectionEvent, RecvEvent, SendAction},
 };

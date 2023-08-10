@@ -28,8 +28,8 @@ pub enum ListenerEvent {
 }
 
 pub struct ConnectedEvent {
-    pub events: Mailbox<tcp::StreamEvent>,
-    pub actions: Sender<tcp::StreamAction>,
+    pub events: Mailbox<tcp::ConnectionEvent>,
+    pub actions: Sender<tcp::ConnectionAction>,
 }
 
 /// Open a TCP stream listener on the given address.
@@ -43,17 +43,18 @@ pub fn bind(
     addr: SocketAddr,
     event_sender: Sender<ListenerEvent>,
 ) -> Result<(Sender<ListenerAction>, ListenerInfo), Error> {
-    let (actor, actions_sender, info) = Service::new(registry, addr, event_sender)?;
+    let (actor, info) = Service::new(registry, addr, event_sender)?;
+    let actions = actor.actions.sender();
     world.insert("tcp-listener", actor)?;
 
-    Ok((actions_sender, info))
+    Ok((actions, info))
 }
 
 struct Service {
     registry: RegistryHandle,
-    action_mailbox: Mailbox<ListenerAction>,
-    ready_mailbox: Mailbox<ReadyEvent>,
-    event_sender: Sender<ListenerEvent>,
+    actions: Mailbox<ListenerAction>,
+    events: Sender<ListenerEvent>,
+    ready: Mailbox<ReadyEvent>,
 
     listener: mio::net::TcpListener,
     token: Token,
@@ -63,34 +64,31 @@ impl Service {
     fn new(
         registry: RegistryHandle,
         addr: SocketAddr,
-        event_sender: Sender<ListenerEvent>,
-    ) -> Result<(Self, Sender<ListenerAction>, ListenerInfo), Error> {
+        events: Sender<ListenerEvent>,
+    ) -> Result<(Self, ListenerInfo), Error> {
         event!(Level::DEBUG, "binding");
 
-        let action_mailbox = Mailbox::default();
-        let ready_mailbox = Mailbox::default();
-
-        let action_sender = action_mailbox.sender();
-        let ready_sender = ready_mailbox.sender();
+        let actions = Mailbox::default();
+        let ready = Mailbox::default();
 
         // Create the socket
         let mut listener = mio::net::TcpListener::bind(addr)?;
         let local_addr = listener.local_addr()?;
 
         // Register the socket for ready events
-        let token = registry.register(&mut listener, Interest::READABLE, ready_sender.clone())?;
+        let token = registry.register(&mut listener, Interest::READABLE, ready.sender())?;
 
         let value = Self {
             registry,
-            action_mailbox,
-            ready_mailbox,
-            event_sender,
+            actions,
+            events,
+            ready,
 
             listener,
             token,
         };
         let listener = ListenerInfo { local_addr };
-        Ok((value, action_sender, listener))
+        Ok((value, listener))
     }
 }
 
@@ -98,7 +96,7 @@ impl Drop for Service {
     fn drop(&mut self) {
         event!(Level::DEBUG, "closing");
 
-        let _ = self.event_sender.send(ListenerEvent::Closed);
+        let _ = self.events.send(ListenerEvent::Closed);
 
         self.registry.deregister(&mut self.listener, self.token);
     }
@@ -106,14 +104,14 @@ impl Drop for Service {
 
 impl Actor for Service {
     fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        self.action_mailbox.set_signal(meta.signal());
-        self.ready_mailbox.set_signal(meta.signal());
+        self.actions.set_signal(meta.signal());
+        self.ready.set_signal(meta.signal());
         Ok(())
     }
 
     fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         let mut readable = false;
-        while let Some(ready) = self.ready_mailbox.recv() {
+        while let Some(ready) = self.ready.recv() {
             readable |= ready.readable;
         }
 
@@ -121,7 +119,7 @@ impl Actor for Service {
             self.on_listener_ready(world)?;
         }
 
-        while let Some(_action) = self.action_mailbox.recv() {
+        while let Some(_action) = self.actions.recv() {
             meta.set_stop();
         }
 
@@ -147,7 +145,7 @@ impl Service {
                 actions: actions_sender,
                 events: event_mailbox,
             };
-            self.event_sender.send(ListenerEvent::Connected(event))?;
+            self.events.send(ListenerEvent::Connected(event))?;
         }
 
         Ok(())

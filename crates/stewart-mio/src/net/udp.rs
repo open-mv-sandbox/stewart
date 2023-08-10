@@ -51,8 +51,8 @@ pub fn bind(
 
 struct Service {
     actions: Mailbox<Action>,
-    ready: Mailbox<ReadyEvent>,
     events: Sender<RecvEvent>,
+    ready: Mailbox<ReadyEvent>,
 
     registry: RegistryHandle,
     socket: mio::net::UdpSocket,
@@ -66,15 +66,15 @@ impl Service {
     fn new(
         registry: RegistryHandle,
         addr: SocketAddr,
-        event_sender: Sender<RecvEvent>,
+        events: Sender<RecvEvent>,
     ) -> Result<(Self, Sender<Action>, SocketInfo), Error> {
         event!(Level::DEBUG, "binding");
 
-        let action_mailbox = Mailbox::default();
-        let ready_mailbox = Mailbox::default();
+        let actions = Mailbox::default();
+        let ready = Mailbox::default();
 
-        let action_sender = action_mailbox.sender();
-        let ready_sender = ready_mailbox.sender();
+        let action_sender = actions.sender();
+        let ready_sender = ready.sender();
 
         // Create the socket
         let mut socket = mio::net::UdpSocket::bind(addr)?;
@@ -84,9 +84,9 @@ impl Service {
         let token = registry.register(&mut socket, Interest::READABLE, ready_sender)?;
 
         let value = Self {
-            actions: action_mailbox,
-            ready: ready_mailbox,
-            events: event_sender,
+            actions,
+            events,
+            ready,
 
             registry,
             socket,

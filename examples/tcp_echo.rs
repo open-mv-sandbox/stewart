@@ -86,7 +86,7 @@ impl Service {
                     // Send a greeting message
                     let data: Bytes = "HELLO WORLD\n".into();
                     let action = tcp::SendAction { data };
-                    event.actions.send(tcp::StreamAction::Send(action))?;
+                    event.actions.send(tcp::ConnectionAction::Send(action))?;
 
                     // Keep track of the stream
                     event.events.set_signal(meta.signal());
@@ -108,13 +108,13 @@ impl Service {
         for connection in &mut self.connections {
             while let Some(event) = connection.event.events.recv() {
                 match event {
-                    tcp::StreamEvent::Recv(event) => {
+                    tcp::ConnectionEvent::Recv(event) => {
                         event!(Level::INFO, bytes = event.data.len(), "received data");
 
                         let data = std::str::from_utf8(&event.data)?;
                         connection.pending.push(data.to_string());
                     }
-                    tcp::StreamEvent::Closed => {
+                    tcp::ConnectionEvent::Closed => {
                         event!(Level::INFO, "stream closed");
                         connection.closed = true;
                     }
@@ -126,7 +126,7 @@ impl Service {
                     // Reply with an echo to all pending
                     let reply = format!("HELLO, \"{}\"!\n", pending.trim());
                     let packet = tcp::SendAction { data: reply.into() };
-                    let message = tcp::StreamAction::Send(packet);
+                    let message = tcp::ConnectionAction::Send(packet);
                     connection.event.actions.send(message)?;
                 }
             }

@@ -14,7 +14,7 @@ use tracing::{event, Level};
 
 use crate::{ReadyEvent, RegistryHandle};
 
-pub enum StreamAction {
+pub enum ConnectionAction {
     /// Send a data to the stream.
     Send(SendAction),
     /// Close the stream.
@@ -25,7 +25,7 @@ pub struct SendAction {
     pub data: Bytes,
 }
 
-pub enum StreamEvent {
+pub enum ConnectionEvent {
     /// Data received on the stream.
     Recv(RecvEvent),
     /// Stream has been closed.
@@ -40,8 +40,8 @@ pub(crate) fn open(
     world: &mut World,
     registry: RegistryHandle,
     stream: mio::net::TcpStream,
-    event_sender: Sender<StreamEvent>,
-) -> Result<Sender<StreamAction>, Error> {
+    event_sender: Sender<ConnectionEvent>,
+) -> Result<Sender<ConnectionAction>, Error> {
     let (actor, sender) = Service::new(registry, stream, event_sender)?;
     world.insert("tcp-stream", actor)?;
 
@@ -50,9 +50,9 @@ pub(crate) fn open(
 
 struct Service {
     registry: RegistryHandle,
-    action_mailbox: Mailbox<StreamAction>,
+    action_mailbox: Mailbox<ConnectionAction>,
     ready_mailbox: Mailbox<ReadyEvent>,
-    event_sender: Sender<StreamEvent>,
+    event_sender: Sender<ConnectionEvent>,
 
     stream: mio::net::TcpStream,
     token: Token,
@@ -65,8 +65,8 @@ impl Service {
     fn new(
         registry: RegistryHandle,
         mut stream: mio::net::TcpStream,
-        event_sender: Sender<StreamEvent>,
-    ) -> Result<(Self, Sender<StreamAction>), Error> {
+        event_sender: Sender<ConnectionEvent>,
+    ) -> Result<(Self, Sender<ConnectionAction>), Error> {
         event!(Level::DEBUG, "opening stream");
 
         let action_mailbox = Mailbox::default();
@@ -98,7 +98,7 @@ impl Drop for Service {
     fn drop(&mut self) {
         event!(Level::DEBUG, "closing");
 
-        let _ = self.event_sender.send(StreamEvent::Closed);
+        let _ = self.event_sender.send(ConnectionEvent::Closed);
 
         self.registry.deregister(&mut self.stream, self.token);
     }
@@ -124,8 +124,8 @@ impl Service {
         // Handle actions
         while let Some(action) = self.action_mailbox.recv() {
             match action {
-                StreamAction::Send(action) => self.on_action_send(action)?,
-                StreamAction::Close => meta.set_stop(),
+                ConnectionAction::Send(action) => self.on_action_send(action)?,
+                ConnectionAction::Close => meta.set_stop(),
             }
         }
 
@@ -192,7 +192,7 @@ impl Service {
             event!(Level::TRACE, count = bytes_read, "received incoming");
             let data = self.buffer.split_to(bytes_read).freeze();
             let event = RecvEvent { data };
-            self.event_sender.send(StreamEvent::Recv(event))?;
+            self.event_sender.send(ConnectionEvent::Recv(event))?;
         }
 
         // If the stream got closed, stop the actor
