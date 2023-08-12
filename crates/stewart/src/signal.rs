@@ -10,58 +10,23 @@ use thunderdome::{Arena, Index};
 use tracing::{event, instrument, Level};
 
 #[derive(Default)]
-struct SignalBackend {
+pub struct SignalReceiver {
+    backend: Rc<RefCell<SignalShared>>,
+}
+
+#[derive(Default)]
+struct SignalShared {
     state: Arena<bool>,
     queue: VecDeque<Index>,
 }
 
-/// Sends a signal to schedule an actor for processing in a `World`.
-#[derive(Clone)]
-pub struct Signal {
-    backend: Weak<RefCell<SignalBackend>>,
-    index: Index,
-}
-
-impl Signal {
-    /// Send the signal.
-    #[instrument("Signal::notify", level = "debug", skip_all)]
-    pub fn send(&self) -> Result<(), SendError> {
-        event!(Level::DEBUG, "notifying actor");
-
-        let backend = self.backend.upgrade().context("world no longer exists")?;
-        let mut backend = backend.borrow_mut();
-
-        // Check actor exists
-        let Some(state) = backend.state.get_mut(self.index) else {
-            return Err(anyhow!("attempted to signal actor that does not exist").into());
-        };
-
-        // Don't double-schedule
-        if *state {
-            event!(Level::TRACE, "actor already scheduled");
-            return Ok(());
-        }
-
-        // Add to the end of the queue
-        *state = true;
-        backend.queue.push_back(self.index);
-
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-pub struct SignalReceiver {
-    backend: Rc<RefCell<SignalBackend>>,
-}
-
 impl SignalReceiver {
-    pub fn register(&self, index: Index) {
+    pub fn track(&self, index: Index) {
         let mut backend = self.backend.borrow_mut();
         backend.state.insert_at(index, false);
     }
 
-    pub fn unregister(&self, index: Index) -> Result<(), Error> {
+    pub fn untrack(&self, index: Index) -> Result<(), Error> {
         let mut backend = self.backend.borrow_mut();
 
         let value = backend
@@ -96,6 +61,41 @@ impl SignalReceiver {
         }
 
         Ok(result)
+    }
+}
+
+/// Sends a signal to schedule an actor for processing in a `World`.
+#[derive(Clone)]
+pub struct Signal {
+    backend: Weak<RefCell<SignalShared>>,
+    index: Index,
+}
+
+impl Signal {
+    /// Send the signal.
+    #[instrument("Signal::notify", level = "debug", skip_all)]
+    pub fn send(&self) -> Result<(), SendError> {
+        event!(Level::DEBUG, "notifying actor");
+
+        let backend = self.backend.upgrade().context("world no longer exists")?;
+        let mut backend = backend.borrow_mut();
+
+        // Check actor exists
+        let Some(state) = backend.state.get_mut(self.index) else {
+            return Err(anyhow!("attempted to signal actor that does not exist").into());
+        };
+
+        // Don't double-schedule
+        if *state {
+            event!(Level::TRACE, "actor already scheduled");
+            return Ok(());
+        }
+
+        // Add to the end of the queue
+        *state = true;
+        backend.queue.push_back(self.index);
+
+        Ok(())
     }
 }
 

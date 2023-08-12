@@ -12,14 +12,14 @@ use tracing::{event, Level};
 
 /// Mio context registry.
 pub struct Registry {
-    inner: Rc<RefCell<RegistryInner>>,
+    inner: Rc<RefCell<RegistryShared>>,
 }
 
 impl Registry {
     pub fn new() -> Result<Self, Error> {
         let poll = Poll::new()?;
 
-        let inner = RegistryInner {
+        let inner = RegistryShared {
             poll,
             next_token: 0,
             ready_senders: HashMap::new(),
@@ -66,7 +66,7 @@ impl Registry {
 /// Actors can use an instance of this to register for receiving mio events.
 #[derive(Clone)]
 pub struct RegistryHandle {
-    inner: Weak<RefCell<RegistryInner>>,
+    inner: Weak<RefCell<RegistryShared>>,
 }
 
 impl RegistryHandle {
@@ -133,12 +133,12 @@ impl RegistryHandle {
         }
     }
 
-    fn try_inner(&self) -> Result<Rc<RefCell<RegistryInner>>, Error> {
+    fn try_inner(&self) -> Result<Rc<RefCell<RegistryShared>>, Error> {
         self.inner.upgrade().context("registry dropped")
     }
 }
 
-pub struct RegistryInner {
+pub struct RegistryShared {
     poll: Poll,
     next_token: usize,
     /// TODO: Since ready events always get 'squashed', we can manually track that in an
@@ -146,7 +146,7 @@ pub struct RegistryInner {
     ready_senders: HashMap<Token, Sender<ReadyEvent>>,
 }
 
-impl RegistryInner {
+impl RegistryShared {
     /// Create a new registry-unique token.
     fn token(&mut self) -> Token {
         let token = self.next_token;

@@ -40,11 +40,11 @@ impl World {
     ///
     /// The given `name` will be used in logging.
     #[instrument("World::insert", level = "debug", skip_all)]
-    pub fn insert<A>(&mut self, name: &'static str, actor: A) -> Result<(), Error>
+    pub fn insert<A>(&mut self, name: &'static str, actor: A) -> Result<Id, Error>
     where
         A: Actor,
     {
-        event!(Level::DEBUG, name, "creating actor");
+        event!(Level::DEBUG, name, "inserting actor");
 
         // Create and insert the actor itself
         let entry = ActorEntry {
@@ -54,11 +54,24 @@ impl World {
         let index = self.actors.insert(entry);
 
         // Track it in the receiver
-        self.receiver.register(index);
+        self.receiver.track(index);
 
         // Call the `start` callback to let the actor bind its `Signal`
         self.call_actor(index, Actor::register)
             .context("failed to start")?;
+
+        Ok(Id { index })
+    }
+
+    /// Remove an actor from the world.
+    #[instrument("World::remove", level = "debug", skip_all)]
+    pub fn remove(&mut self, id: Id) -> Result<(), Error> {
+        event!(Level::DEBUG, "removing actor");
+
+        self.receiver.untrack(id.index)?;
+        self.actors
+            .remove(id.index)
+            .context("failed to find actor")?;
 
         Ok(())
     }
@@ -68,7 +81,7 @@ impl World {
         self.receiver.signal(id.index)
     }
 
-    /// Process all pending actors, until none are left pending.
+    /// Process all pending signalled actors, until none are left pending.
     #[instrument("World::process", level = "debug", skip_all)]
     pub fn process(&mut self) -> Result<(), ProcessError> {
         while let Some(index) = self.receiver.next()? {
@@ -108,7 +121,7 @@ impl World {
 
         // Stop if necessary
         if meta.stop() {
-            self.stop(index)?;
+            self.remove(id)?;
         }
 
         Ok(())
@@ -127,15 +140,6 @@ impl World {
             .get_mut(index)
             .context("failed to find actor for return")?;
         entry.actor = Some(actor);
-
-        Ok(())
-    }
-
-    fn stop(&mut self, index: Index) -> Result<(), Error> {
-        event!(Level::DEBUG, "stopping actor");
-
-        self.receiver.unregister(index)?;
-        self.actors.remove(index).context("failed to find actor")?;
 
         Ok(())
     }
