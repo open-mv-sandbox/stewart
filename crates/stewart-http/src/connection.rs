@@ -41,8 +41,8 @@ struct Service {
     events: Sender<ConnectionEvent>,
     http_events: Sender<HttpEvent>,
 
-    receive_buffer: String,
     tcp_closed: bool,
+    receive_buffer: BytesMut,
     pending_requests: VecDeque<Mailbox<RequestAction>>,
 }
 
@@ -62,8 +62,8 @@ impl Service {
             events,
             http_events,
 
-            receive_buffer: String::new(),
             tcp_closed: false,
+            receive_buffer: BytesMut::new(),
             pending_requests: VecDeque::new(),
         }
     }
@@ -99,28 +99,7 @@ impl Actor for Service {
         }
 
         self.process_actions()?;
-
-        // Check if we have a full request worth of data
-        // TODO: This is very incorrect and really should be be redesigned entirely
-        let split = self.receive_buffer.split_once("\r\n\r\n");
-        if let Some((_left, right)) = split {
-            self.receive_buffer = right.to_string();
-
-            event!(Level::DEBUG, "received request");
-
-            let mailbox = Mailbox::default();
-            let signal = world.signal(meta.id());
-            mailbox.set_signal(signal);
-
-            // Send the request event
-            let event = RequestEvent {
-                actions: mailbox.sender(),
-            };
-            self.http_events.send(HttpEvent::Request(event))?;
-
-            // Track the request
-            self.pending_requests.push_back(mailbox);
-        }
+        self.process_received(world, meta)?;
 
         // Check requests we can resolve
         // HTTP 1.1 sends back responses in the same order as requests, so we only check the first
@@ -145,9 +124,7 @@ impl Service {
             match event {
                 tcp::ConnectionEvent::Recv(event) => {
                     event!(Level::TRACE, bytes = event.data.len(), "received data");
-
-                    let data = std::str::from_utf8(&event.data)?;
-                    self.receive_buffer.push_str(data);
+                    self.receive_buffer.extend(&event.data);
                 }
                 tcp::ConnectionEvent::Closed => {
                     event!(Level::DEBUG, "connection closed");
@@ -168,6 +145,47 @@ impl Service {
                     self.tcp_actions.send(tcp::ConnectionAction::Close)?;
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    /// Process pending data previously received, but not yet processed.
+    fn process_received(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        // TODO: Instead of checking every time if we have a full header's worth, do something
+        // smarter.
+        // TODO: Handle requests with body content
+
+        loop {
+            // Check if we have a full request worth of data left in the buffer
+            let location = self
+                .receive_buffer
+                .windows(4)
+                .enumerate()
+                .find(|(_, window)| window == b"\r\n\r\n")
+                .map(|(i, _)| i);
+            let Some(location) = location else { break; };
+
+            event!(Level::DEBUG, "received request");
+
+            // Split off the request we have to process
+            let request = self.receive_buffer.split_to(location + 4);
+            let data = std::str::from_utf8(&request)?;
+            println!("REQUEST: {:?}", data);
+
+            // Create the mailbox to send a response back through
+            let mailbox = Mailbox::default();
+            let signal = world.signal(meta.id());
+            mailbox.set_signal(signal);
+
+            // Send the request event
+            let event = RequestEvent {
+                actions: mailbox.sender(),
+            };
+            self.http_events.send(HttpEvent::Request(event))?;
+
+            // Track the request
+            self.pending_requests.push_back(mailbox);
         }
 
         Ok(())

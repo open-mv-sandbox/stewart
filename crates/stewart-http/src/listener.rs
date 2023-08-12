@@ -10,14 +10,15 @@ use tracing::{event, Level};
 
 use crate::{connection, HttpEvent};
 
-pub fn listen(
+/// Open a HTTP listener on the given address.
+pub fn bind(
     world: &mut World,
     registry: RegistryRef,
     addr: SocketAddr,
     http_events: Sender<HttpEvent>,
 ) -> Result<(), Error> {
     let actor = Service::new(world, registry, addr, http_events)?;
-    world.insert("http-server", actor)?;
+    world.insert("http-listener", actor)?;
 
     Ok(())
 }

@@ -36,7 +36,7 @@ pub struct ConnectedEvent {
 ///
 /// TCP, unlike UDP, works with ongoing connections.
 /// Before a connection is established, you first need to 'listen' for those on a port.
-#[instrument("tcp::listen", skip_all)]
+#[instrument("tcp::bind", skip_all)]
 pub fn bind(
     world: &mut World,
     registry: RegistryRef,

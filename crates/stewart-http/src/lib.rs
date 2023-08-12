@@ -6,7 +6,7 @@ mod listener;
 use bytes::Bytes;
 use stewart::message::Sender;
 
-pub use self::listener::listen;
+pub use self::listener::bind;
 
 pub enum HttpEvent {
     Request(RequestEvent),

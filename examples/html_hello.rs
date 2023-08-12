@@ -31,7 +31,7 @@ impl Service {
         let http_events = Mailbox::default();
 
         let addr = "127.0.0.1:1234".parse()?;
-        stewart_http::listen(world, registry, addr, http_events.sender())?;
+        stewart_http::bind(world, registry, addr, http_events.sender())?;
 
         let actor = Service { http_events };
         Ok(actor)
