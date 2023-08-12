@@ -63,13 +63,15 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        self.server_mailbox.set_signal(meta.signal());
+    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        let signal = world.signal(meta.id());
+        self.server_mailbox.set_signal(signal);
+
         Ok(())
     }
 
-    fn process(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        self.poll_listener(meta)?;
+    fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        self.poll_listener(world, meta)?;
         self.poll_connections()?;
 
         Ok(())
@@ -77,7 +79,7 @@ impl Actor for Service {
 }
 
 impl Service {
-    fn poll_listener(&mut self, meta: &mut Metadata) -> Result<(), Error> {
+    fn poll_listener(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         while let Some(event) = self.server_mailbox.recv() {
             match event {
                 tcp::ListenerEvent::Connected(event) => {
@@ -89,7 +91,8 @@ impl Service {
                     event.actions.send(tcp::ConnectionAction::Send(action))?;
 
                     // Keep track of the stream
-                    event.events.set_signal(meta.signal());
+                    let signal = world.signal(meta.id());
+                    event.events.set_signal(signal);
                     let connection = Connection {
                         event,
                         pending: Vec::new(),

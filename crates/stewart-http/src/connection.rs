@@ -81,13 +81,16 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        self.tcp_events.set_signal(meta.signal());
-        self.actions.set_signal(meta.signal());
+    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        let signal = world.signal(meta.id());
+
+        self.tcp_events.set_signal(signal.clone());
+        self.actions.set_signal(signal);
+
         Ok(())
     }
 
-    fn process(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+    fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         self.process_tcp(meta)?;
 
         // Can't do anything further if we don't have an open TCP connection
@@ -104,14 +107,18 @@ impl Actor for Service {
             self.receive_buffer = right.to_string();
 
             event!(Level::DEBUG, "received request");
-            let mailbox = Mailbox::default();
-            mailbox.set_signal(meta.signal());
 
+            let mailbox = Mailbox::default();
+            let signal = world.signal(meta.id());
+            mailbox.set_signal(signal);
+
+            // Send the request event
             let event = RequestEvent {
                 actions: mailbox.sender(),
             };
             self.http_events.send(HttpEvent::Request(event))?;
 
+            // Track the request
             self.pending_requests.push_back(mailbox);
         }
 

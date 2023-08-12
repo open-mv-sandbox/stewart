@@ -1,6 +1,6 @@
 use anyhow::Error;
 
-use crate::{Signal, World};
+use crate::{Id, World};
 
 /// Actor identity and implementation trait.
 ///
@@ -25,25 +25,22 @@ pub trait Actor: 'static {
 
 /// Metadata of an `Actor` in a `World`.
 pub struct Metadata {
-    signal: Signal,
+    id: Id,
     stop: bool,
 }
 
 impl Metadata {
-    pub(crate) fn new(signal: Signal) -> Self {
-        Self {
-            signal,
-            stop: false,
-        }
+    pub(crate) fn new(id: Id) -> Self {
+        Self { id, stop: false }
+    }
+
+    /// Get the identifier of this actor.
+    pub fn id(&self) -> Id {
+        self.id
     }
 
     pub(crate) fn stop(&self) -> bool {
         self.stop
-    }
-
-    /// Get a `Signal` that wakes the actor.
-    pub fn signal(&self) -> Signal {
-        self.signal.clone()
     }
 
     /// At the end of this processing step, stop the actor.

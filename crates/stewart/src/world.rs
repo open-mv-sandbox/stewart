@@ -3,7 +3,7 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, instrument, span, Level};
 
-use crate::{signal::SignalReceiver, Actor, Metadata};
+use crate::{signal::SignalReceiver, Actor, Metadata, Signal};
 
 /// Thread-local actor tracking and execution system.
 #[derive(Default)]
@@ -63,6 +63,11 @@ impl World {
         Ok(())
     }
 
+    /// Create a signal for the given actor.
+    pub fn signal(&self, id: Id) -> Signal {
+        self.receiver.signal(id.index)
+    }
+
     /// Process all pending actors, until none are left pending.
     #[instrument("World::process", level = "debug", skip_all)]
     pub fn process(&mut self) -> Result<(), ProcessError> {
@@ -86,8 +91,8 @@ impl World {
 
         // Let the actor's implementation process
         event!(Level::TRACE, "calling actor");
-        let signal = self.receiver.signal(index);
-        let mut meta = Metadata::new(signal);
+        let id = Id { index };
+        let mut meta = Metadata::new(id);
         let result = f(actor.as_mut(), self, &mut meta);
 
         // Check if processing failed
@@ -134,6 +139,12 @@ impl World {
 
         Ok(())
     }
+}
+
+/// Identifier of an actor inserted into a world.
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct Id {
+    index: Index,
 }
 
 /// Error while processing actors.

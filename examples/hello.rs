@@ -141,10 +141,11 @@ mod hello_service {
     }
 
     impl Actor for Service {
-        fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
             // To wake up our actor when a message gets sent, register it with the mailbox for
             // notification
-            self.mailbox.set_signal(meta.signal());
+            let signal = world.signal(meta.id());
+            self.mailbox.set_signal(signal);
 
             Ok(())
         }

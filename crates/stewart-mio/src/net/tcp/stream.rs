@@ -105,9 +105,12 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        self.action_mailbox.set_signal(meta.signal());
-        self.ready_mailbox.set_signal(meta.signal());
+    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        let signal = world.signal(meta.id());
+
+        self.action_mailbox.set_signal(signal.clone());
+        self.ready_mailbox.set_signal(signal);
+
         Ok(())
     }
 

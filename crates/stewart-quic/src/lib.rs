@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Error;
@@ -68,8 +70,10 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        self.event_mailbox.set_signal(meta.signal());
+    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        let signal = world.signal(meta.id());
+        self.event_mailbox.set_signal(signal);
+
         Ok(())
     }
 

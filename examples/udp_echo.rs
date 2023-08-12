@@ -88,9 +88,11 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        self.server_mailbox.set_signal(meta.signal());
-        self.client_mailbox.set_signal(meta.signal());
+    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        let signal = world.signal(meta.id());
+
+        self.server_mailbox.set_signal(signal.clone());
+        self.client_mailbox.set_signal(signal);
 
         Ok(())
     }

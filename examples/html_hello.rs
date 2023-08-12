@@ -4,6 +4,7 @@ use anyhow::Error;
 use stewart::{message::Mailbox, Actor, Metadata, World};
 use stewart_http::{HttpEvent, RequestAction};
 use stewart_mio::{Registry, RegistryHandle};
+use tracing::{event, Level};
 
 fn main() -> Result<(), Error> {
     utils::init_logging();
@@ -38,14 +39,18 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        self.http_events.set_signal(meta.signal());
+    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        let signal = world.signal(meta.id());
+        self.http_events.set_signal(signal);
+
         Ok(())
     }
 
     fn process(&mut self, _world: &mut World, _meta: &mut Metadata) -> Result<(), Error> {
         while let Some(event) = self.http_events.recv() {
             let HttpEvent::Request(request) = event;
+
+            event!(Level::INFO, "received request");
 
             let body = RESPONSE.into();
             request.actions.send(RequestAction::SendResponse(body))?;

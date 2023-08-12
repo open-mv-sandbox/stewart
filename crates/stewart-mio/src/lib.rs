@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 mod event_loop;
 pub mod net;
 mod registry;

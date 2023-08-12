@@ -78,8 +78,10 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        self.tcp_events.set_signal(meta.signal());
+    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        let signal = world.signal(meta.id());
+        self.tcp_events.set_signal(signal);
+
         Ok(())
     }
 
@@ -89,7 +91,8 @@ impl Actor for Service {
             match event {
                 tcp::ListenerEvent::Connected(event) => {
                     let events = Mailbox::default();
-                    events.set_signal(meta.signal());
+                    let signal = world.signal(meta.id());
+                    events.set_signal(signal);
 
                     let actions = connection::open(
                         world,
