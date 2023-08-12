@@ -34,12 +34,6 @@ struct Service {
     connections: Vec<Connection>,
 }
 
-struct Connection {
-    event: tcp::ConnectedEvent,
-    pending: Vec<String>,
-    closed: bool,
-}
-
 impl Service {
     pub fn new(world: &mut World, registry: RegistryRef) -> Result<Self, Error> {
         let server_mailbox = Mailbox::default();
@@ -95,7 +89,7 @@ impl Service {
                     event.events.set_signal(signal);
                     let connection = Connection {
                         event,
-                        pending: Vec::new(),
+                        pending: String::new(),
                         closed: false,
                     };
                     self.connections.push(connection);
@@ -109,33 +103,64 @@ impl Service {
 
     fn poll_connections(&mut self) -> Result<(), Error> {
         for connection in &mut self.connections {
-            while let Some(event) = connection.event.events.recv() {
-                match event {
-                    tcp::ConnectionEvent::Recv(event) => {
-                        event!(Level::INFO, bytes = event.data.len(), "received data");
+            connection.poll()?;
+        }
 
-                        let data = std::str::from_utf8(&event.data)?;
-                        connection.pending.push(data.to_string());
-                    }
-                    tcp::ConnectionEvent::Closed => {
-                        event!(Level::INFO, "stream closed");
-                        connection.closed = true;
-                    }
+        self.connections.retain(|c| !c.closed);
+
+        Ok(())
+    }
+}
+
+struct Connection {
+    event: tcp::ConnectedEvent,
+    pending: String,
+    closed: bool,
+}
+
+impl Connection {
+    fn poll(&mut self) -> Result<(), Error> {
+        // Handle any incoming TCP stream events
+        while let Some(event) = self.event.events.recv() {
+            match event {
+                tcp::ConnectionEvent::Recv(event) => {
+                    event!(Level::INFO, bytes = event.data.len(), "received data");
+
+                    let data = std::str::from_utf8(&event.data)?;
+                    self.pending.push_str(data);
                 }
-            }
-
-            if !connection.closed {
-                for pending in connection.pending.drain(..) {
-                    // Reply with an echo to all pending
-                    let reply = format!("HELLO, \"{}\"!\n", pending.trim());
-                    let packet = tcp::SendAction { data: reply.into() };
-                    let message = tcp::ConnectionAction::Send(packet);
-                    connection.event.actions.send(message)?;
+                tcp::ConnectionEvent::Closed => {
+                    event!(Level::INFO, "stream closed");
+                    self.closed = true;
                 }
             }
         }
 
-        self.connections.retain(|c| !c.closed);
+        // If the stream is now closed, we can't do anything else
+        if self.closed {
+            return Ok(());
+        }
+
+        // Check how many messages ended with a newline we have
+        let lines: Vec<_> = self.pending.split('\n').collect();
+        let len = lines.len();
+
+        // More than one line means we have messages terminated by a newline
+        if len > 1 {
+            // Keep only the last line
+            let remaining = lines.last().unwrap_or(&"").to_string();
+
+            // Echo every line independently, except the last which is not yet done
+            for line in lines.into_iter().take(len - 1) {
+                let reply = format!("HELLO, \"{}\"!\n", line.trim());
+
+                let packet = tcp::SendAction { data: reply.into() };
+                let message = tcp::ConnectionAction::Send(packet);
+                self.event.actions.send(message)?;
+            }
+
+            self.pending = remaining;
+        }
 
         Ok(())
     }

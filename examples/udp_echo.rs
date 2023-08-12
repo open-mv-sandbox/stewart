@@ -103,9 +103,10 @@ impl Actor for Service {
             event!(Level::INFO, data, "server received packet");
 
             // Echo back with a hello message
+            let data = data.trim();
             let packet = udp::SendAction {
                 remote: packet.remote,
-                data: format!("Hello, \"{}\"!", data).into(),
+                data: format!("Hello, \"{}\"!\n", data).into(),
             };
             let message = udp::Action::Send(packet);
             self.server_sender.send(message)?;
