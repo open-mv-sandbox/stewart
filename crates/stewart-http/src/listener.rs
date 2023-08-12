@@ -5,14 +5,14 @@ use stewart::{
     message::{Mailbox, Sender},
     Actor, Metadata, World,
 };
-use stewart_mio::{net::tcp, RegistryHandle};
+use stewart_mio::{net::tcp, RegistryRef};
 use tracing::{event, Level};
 
 use crate::{connection, HttpEvent};
 
 pub fn listen(
     world: &mut World,
-    registry: RegistryHandle,
+    registry: RegistryRef,
     addr: SocketAddr,
     http_events: Sender<HttpEvent>,
 ) -> Result<(), Error> {
@@ -39,7 +39,7 @@ struct StreamEntry {
 impl Service {
     fn new(
         world: &mut World,
-        registry: RegistryHandle,
+        registry: RegistryRef,
         addr: SocketAddr,
         http_events: Sender<HttpEvent>,
     ) -> Result<Self, Error> {

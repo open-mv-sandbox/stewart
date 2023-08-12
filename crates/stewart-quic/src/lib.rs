@@ -10,12 +10,12 @@ use stewart::{
     message::{Mailbox, Sender},
     Actor, Metadata, World,
 };
-use stewart_mio::{net::udp, RegistryHandle};
+use stewart_mio::{net::udp, RegistryRef};
 use tracing::{event, Level};
 
 pub fn endpoint(
     world: &mut World,
-    registry: RegistryHandle,
+    registry: RegistryRef,
     addr: SocketAddr,
     certificate: Certificate,
     private_key: PrivateKey,
@@ -36,7 +36,7 @@ struct Service {
 impl Service {
     fn new(
         world: &mut World,
-        registry: RegistryHandle,
+        registry: RegistryRef,
         addr: SocketAddr,
         certificate: Certificate,
         private_key: PrivateKey,

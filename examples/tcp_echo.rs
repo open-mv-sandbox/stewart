@@ -8,7 +8,7 @@ use stewart::{
 };
 use stewart_mio::{
     net::tcp::{self},
-    Registry, RegistryHandle,
+    Registry, RegistryRef,
 };
 use tracing::{event, Level};
 
@@ -41,7 +41,7 @@ struct Connection {
 }
 
 impl Service {
-    pub fn new(world: &mut World, registry: RegistryHandle) -> Result<Self, Error> {
+    pub fn new(world: &mut World, registry: RegistryRef) -> Result<Self, Error> {
         let server_mailbox = Mailbox::default();
 
         // Start the listen port

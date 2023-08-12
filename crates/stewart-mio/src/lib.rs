@@ -6,5 +6,5 @@ mod registry;
 
 pub use self::{
     event_loop::run_event_loop,
-    registry::{ReadyEvent, Registry, RegistryHandle},
+    registry::{ReadyRef, ReadyState, Registry, RegistryRef},
 };

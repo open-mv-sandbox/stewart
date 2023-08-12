@@ -3,7 +3,7 @@ use mio::{event::Event, Events};
 use stewart::World;
 use tracing::{event, instrument, Level};
 
-use crate::{registry::ReadyEvent, Registry};
+use crate::{registry::ReadyState, Registry};
 
 #[instrument("mio-event-loop", skip_all)]
 pub fn run_event_loop(world: &mut World, registry: &Registry) -> Result<(), Error> {
@@ -39,8 +39,7 @@ fn run_poll_loop(world: &mut World, registry: &Registry) -> Result<(), Error> {
 fn handle(registry: &Registry, event: &Event) -> Result<(), Error> {
     event!(Level::TRACE, "handling mio event");
 
-    let ready = ReadyEvent {
-        token: event.token(),
+    let ready = ReadyState {
         readable: event.is_readable(),
         writable: event.is_writable(),
     };
@@ -51,7 +50,7 @@ fn handle(registry: &Registry, event: &Event) -> Result<(), Error> {
     }
 
     // Send out the message
-    registry.send(event.token(), ready)?;
+    registry.update_state(event.token(), ready)?;
 
     Ok(())
 }

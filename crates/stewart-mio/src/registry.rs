@@ -7,143 +7,206 @@ use std::{
 
 use anyhow::{Context as _, Error};
 use mio::{event::Source, Events, Interest, Poll, Token};
-use stewart::message::Sender;
+use stewart::Signal;
 use tracing::{event, Level};
 
 /// Mio context registry.
 pub struct Registry {
-    inner: Rc<RefCell<RegistryShared>>,
+    shared: Rc<RefCell<RegistryShared>>,
 }
 
 impl Registry {
     pub fn new() -> Result<Self, Error> {
         let poll = Poll::new()?;
 
-        let inner = RegistryShared {
+        let shared = RegistryShared {
             poll,
             next_token: 0,
-            ready_senders: HashMap::new(),
+            tokens: HashMap::new(),
         };
 
         let value = Self {
-            inner: Rc::new(RefCell::new(inner)),
+            shared: Rc::new(RefCell::new(shared)),
         };
         Ok(value)
     }
 
-    pub fn handle(&self) -> RegistryHandle {
-        RegistryHandle {
-            inner: Rc::downgrade(&self.inner),
+    pub fn handle(&self) -> RegistryRef {
+        RegistryRef {
+            shared: Rc::downgrade(&self.shared),
         }
     }
 }
 
 impl Registry {
     pub(crate) fn poll(&self, events: &mut Events) -> Result<(), Error> {
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.shared.borrow_mut();
 
         inner.poll.poll(events, Some(Duration::from_millis(1)))?;
 
         Ok(())
     }
 
-    pub(crate) fn send(&self, token: Token, ready: ReadyEvent) -> Result<(), Error> {
-        let inner = self.inner.borrow();
+    pub(crate) fn update_state(&self, token: Token, ready: ReadyState) -> Result<(), Error> {
+        let mut shared = self.shared.borrow_mut();
 
-        let sender = inner
-            .ready_senders
-            .get(&token)
-            .context("failed to get ready sender")?;
+        let entry = shared
+            .tokens
+            .get_mut(&token)
+            .context("failed to get token entry")?;
 
-        sender.send(ready)?;
+        let signal = entry
+            .signal
+            .as_ref()
+            .context("readyness received for token, but no signal set")?;
+        signal.send()?;
+
+        // Just in case, unhandled read/write events should be combined together if they have not
+        // yet been handled. Mio doesn't garantuee that we'll get another event, and actors should
+        // make sure they handle WouldBlock anyways.
+        entry.state.readable |= ready.readable;
+        entry.state.writable |= ready.writable;
 
         Ok(())
     }
 }
 
-/// Shared handle to access a registry.
+/// Shared weak reference to a registry.
 ///
 /// Actors can use an instance of this to register for receiving mio events.
 #[derive(Clone)]
-pub struct RegistryHandle {
-    inner: Weak<RefCell<RegistryShared>>,
+pub struct RegistryRef {
+    shared: Weak<RefCell<RegistryShared>>,
 }
 
-impl RegistryHandle {
+impl RegistryRef {
     /// Add a source to the registry, registering it with mio.
     ///
     /// You **must** manually deregister too, see mio docs for more information.
-    pub fn register<S>(
-        &self,
-        source: &mut S,
-        interest: Interest,
-        sender: Sender<ReadyEvent>,
-    ) -> Result<Token, Error>
+    pub fn register<S>(&self, source: &mut S, interest: Interest) -> Result<ReadyRef, Error>
     where
         S: Source,
     {
-        let inner = self.try_inner()?;
-        let mut inner = inner.borrow_mut();
+        let shared = try_shared(&self.shared)?;
+        let mut shared = shared.borrow_mut();
 
         // Store the ready callback
-        let token = inner.token();
-        inner.ready_senders.insert(token, sender);
+        let token = shared.token();
+        let state = ReadyState {
+            readable: false,
+            writable: false,
+        };
+        let entry = TokenEntry {
+            signal: None,
+            state,
+        };
+        shared.tokens.insert(token, entry);
 
         // Register with the generated token
-        inner.poll.registry().register(source, token, interest)?;
+        shared.poll.registry().register(source, token, interest)?;
 
-        Ok(token)
+        let ready = ReadyRef {
+            shared: self.shared.clone(),
+            token,
+        };
+        Ok(ready)
     }
+}
 
-    pub fn reregister<S>(
-        &self,
-        source: &mut S,
-        token: Token,
-        interest: Interest,
-    ) -> Result<(), Error>
+/// Reference to a tracked ready state.
+pub struct ReadyRef {
+    shared: Weak<RefCell<RegistryShared>>,
+    token: Token,
+}
+
+impl ReadyRef {
+    pub fn reregister<S>(&self, source: &mut S, interest: Interest) -> Result<(), Error>
     where
         S: Source,
     {
-        let inner = self.try_inner()?;
-        let inner = inner.borrow();
+        let shared = try_shared(&self.shared)?;
+        let shared = shared.borrow();
 
-        inner.poll.registry().reregister(source, token, interest)?;
+        shared
+            .poll
+            .registry()
+            .reregister(source, self.token, interest)?;
 
         Ok(())
     }
 
-    pub fn deregister<S>(&self, source: &mut S, token: Token)
+    pub fn deregister<S>(&self, source: &mut S)
     where
         S: Source,
     {
-        let Ok(inner) = self.try_inner() else {
+        let Ok(shared) = try_shared(&self.shared) else {
             event!(Level::ERROR, "failed to deregister, registry dropped");
             return;
         };
-        let mut inner = inner.borrow_mut();
+        let mut shared = shared.borrow_mut();
 
         // Remove from mio registry
-        let result = inner.poll.registry().deregister(source);
+        let result = shared.poll.registry().deregister(source);
 
-        // Remove the ready callback
-        inner.ready_senders.remove(&token);
+        // Remove the token entry
+        shared.tokens.remove(&self.token);
 
         if let Err(error) = result {
             event!(Level::ERROR, ?error, "failed to deregister");
         }
     }
 
-    fn try_inner(&self) -> Result<Rc<RefCell<RegistryShared>>, Error> {
-        self.inner.upgrade().context("registry dropped")
+    pub fn set_signal(&self, signal: Signal) -> Result<(), Error> {
+        let shared = try_shared(&self.shared)?;
+        let mut shared = shared.borrow_mut();
+
+        let entry = shared
+            .tokens
+            .get_mut(&self.token)
+            .context("failed to get token entry")?;
+        entry.signal = Some(signal);
+
+        Ok(())
+    }
+
+    /// Get the ready state, and reset it for future events.
+    pub fn take(&self) -> Result<ReadyState, Error> {
+        let shared = try_shared(&self.shared)?;
+        let mut shared = shared.borrow_mut();
+
+        let entry = shared
+            .tokens
+            .get_mut(&self.token)
+            .context("failed to get token entry")?;
+
+        let empty = ReadyState {
+            readable: false,
+            writable: false,
+        };
+        let state = std::mem::replace(&mut entry.state, empty);
+
+        Ok(state)
     }
 }
 
-pub struct RegistryShared {
+struct RegistryShared {
     poll: Poll,
+    /// TODO: We can start using an `Arena`.
     next_token: usize,
     /// TODO: Since ready events always get 'squashed', we can manually track that in an
     /// Rc<RefCel<_>>, instead of sending around messages.
-    ready_senders: HashMap<Token, Sender<ReadyEvent>>,
+    tokens: HashMap<Token, TokenEntry>,
+}
+
+pub struct TokenEntry {
+    signal: Option<Signal>,
+    state: ReadyState,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReadyState {
+    pub readable: bool,
+    pub writable: bool,
 }
 
 impl RegistryShared {
@@ -155,9 +218,8 @@ impl RegistryShared {
     }
 }
 
-#[derive(Debug)]
-pub struct ReadyEvent {
-    pub token: Token,
-    pub readable: bool,
-    pub writable: bool,
+fn try_shared(
+    shared: &Weak<RefCell<RegistryShared>>,
+) -> Result<Rc<RefCell<RegistryShared>>, Error> {
+    shared.upgrade().context("registry dropped")
 }

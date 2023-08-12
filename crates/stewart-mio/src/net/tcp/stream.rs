@@ -5,14 +5,14 @@ use std::{
 
 use anyhow::Error;
 use bytes::{Buf, Bytes, BytesMut};
-use mio::{Interest, Token};
+use mio::Interest;
 use stewart::{
     message::{Mailbox, Sender},
     Actor, Metadata, World,
 };
 use tracing::{event, Level};
 
-use crate::{ReadyEvent, RegistryHandle};
+use crate::{ReadyRef, RegistryRef};
 
 pub enum ConnectionAction {
     /// Send a data to the stream.
@@ -38,24 +38,23 @@ pub struct RecvEvent {
 
 pub(crate) fn open(
     world: &mut World,
-    registry: RegistryHandle,
+    registry: RegistryRef,
     stream: mio::net::TcpStream,
     event_sender: Sender<ConnectionEvent>,
 ) -> Result<Sender<ConnectionAction>, Error> {
-    let (actor, sender) = Service::new(registry, stream, event_sender)?;
+    let actor = Service::new(registry, stream, event_sender)?;
+    let actions = actor.actions.sender();
     world.insert("tcp-stream", actor)?;
 
-    Ok(sender)
+    Ok(actions)
 }
 
 struct Service {
-    registry: RegistryHandle,
-    action_mailbox: Mailbox<ConnectionAction>,
-    ready_mailbox: Mailbox<ReadyEvent>,
-    event_sender: Sender<ConnectionEvent>,
+    actions: Mailbox<ConnectionAction>,
+    events: Sender<ConnectionEvent>,
 
     stream: mio::net::TcpStream,
-    token: Token,
+    ready: ReadyRef,
 
     queue: VecDeque<Bytes>,
     buffer: BytesMut,
@@ -63,34 +62,28 @@ struct Service {
 
 impl Service {
     fn new(
-        registry: RegistryHandle,
+        registry: RegistryRef,
         mut stream: mio::net::TcpStream,
-        event_sender: Sender<ConnectionEvent>,
-    ) -> Result<(Self, Sender<ConnectionAction>), Error> {
+        events: Sender<ConnectionEvent>,
+    ) -> Result<Self, Error> {
         event!(Level::DEBUG, "opening stream");
 
-        let action_mailbox = Mailbox::default();
-        let ready_mailbox = Mailbox::default();
-
-        let action_sender = action_mailbox.sender();
-        let ready_sender = ready_mailbox.sender();
+        let actions = Mailbox::default();
 
         // Register for mio events
-        let token = registry.register(&mut stream, Interest::READABLE, ready_sender)?;
+        let ready = registry.register(&mut stream, Interest::READABLE)?;
 
         let value = Service {
-            registry,
-            action_mailbox,
-            ready_mailbox,
-            event_sender,
+            actions,
+            events,
 
             stream,
-            token,
+            ready,
 
             queue: VecDeque::new(),
             buffer: BytesMut::new(),
         };
-        Ok((value, action_sender))
+        Ok(value)
     }
 }
 
@@ -98,9 +91,9 @@ impl Drop for Service {
     fn drop(&mut self) {
         event!(Level::DEBUG, "closing");
 
-        let _ = self.event_sender.send(ConnectionEvent::Closed);
+        let _ = self.events.send(ConnectionEvent::Closed);
 
-        self.registry.deregister(&mut self.stream, self.token);
+        self.ready.deregister(&mut self.stream);
     }
 }
 
@@ -108,8 +101,8 @@ impl Actor for Service {
     fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         let signal = world.signal(meta.id());
 
-        self.action_mailbox.set_signal(signal.clone());
-        self.ready_mailbox.set_signal(signal);
+        self.actions.set_signal(signal.clone());
+        self.ready.set_signal(signal)?;
 
         Ok(())
     }
@@ -125,7 +118,7 @@ impl Actor for Service {
 impl Service {
     fn poll_actions(&mut self, meta: &mut Metadata) -> Result<(), Error> {
         // Handle actions
-        while let Some(action) = self.action_mailbox.recv() {
+        while let Some(action) = self.actions.recv() {
             match action {
                 ConnectionAction::Send(action) => self.on_action_send(action)?,
                 ConnectionAction::Close => meta.set_stop(),
@@ -136,19 +129,13 @@ impl Service {
     }
 
     fn poll_ready(&mut self, meta: &mut Metadata) -> Result<(), Error> {
-        // Handle ready
-        let mut readable = false;
-        let mut writable = false;
-        while let Some(ready) = self.ready_mailbox.recv() {
-            readable |= ready.readable;
-            writable |= ready.writable;
-        }
+        let state = self.ready.take()?;
 
-        if readable {
+        if state.readable {
             self.on_ready_readable(meta)?;
         }
 
-        if writable {
+        if state.writable {
             self.on_ready_writable()?;
         }
 
@@ -195,7 +182,7 @@ impl Service {
             event!(Level::TRACE, count = bytes_read, "received incoming");
             let data = self.buffer.split_to(bytes_read).freeze();
             let event = RecvEvent { data };
-            self.event_sender.send(ConnectionEvent::Recv(event))?;
+            self.events.send(ConnectionEvent::Recv(event))?;
         }
 
         // If the stream got closed, stop the actor
@@ -213,8 +200,8 @@ impl Service {
 
         // If we have nothing left, remove the writable registry
         if self.queue.is_empty() {
-            self.registry
-                .reregister(&mut self.stream, self.token, Interest::READABLE)?;
+            self.ready
+                .reregister(&mut self.stream, Interest::READABLE)?;
         }
 
         Ok(())
@@ -265,11 +252,8 @@ impl Service {
 
         // Reregister so we can receive write events
         if should_register {
-            self.registry.reregister(
-                &mut self.stream,
-                self.token,
-                Interest::READABLE | Interest::WRITABLE,
-            )?;
+            self.ready
+                .reregister(&mut self.stream, Interest::READABLE | Interest::WRITABLE)?;
         }
 
         Ok(())

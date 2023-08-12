@@ -3,7 +3,7 @@ mod utils;
 use anyhow::Error;
 use stewart::{message::Mailbox, Actor, Metadata, World};
 use stewart_http::{HttpEvent, RequestAction};
-use stewart_mio::{Registry, RegistryHandle};
+use stewart_mio::{Registry, RegistryRef};
 use tracing::{event, Level};
 
 fn main() -> Result<(), Error> {
@@ -27,7 +27,7 @@ struct Service {
 }
 
 impl Service {
-    pub fn new(world: &mut World, registry: RegistryHandle) -> Result<Self, Error> {
+    pub fn new(world: &mut World, registry: RegistryRef) -> Result<Self, Error> {
         let http_events = Mailbox::default();
 
         let addr = "127.0.0.1:1234".parse()?;

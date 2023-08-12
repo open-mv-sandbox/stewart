@@ -2,17 +2,14 @@ use std::{collections::VecDeque, net::SocketAddr, time::Instant};
 
 use anyhow::Error;
 use bytes::{Bytes, BytesMut};
-use mio::{Interest, Token};
+use mio::Interest;
 use stewart::{
     message::{Mailbox, Sender},
     Actor, Metadata, World,
 };
 use tracing::{event, instrument, Level};
 
-use crate::{
-    net::check_io,
-    registry::{ReadyEvent, RegistryHandle},
-};
+use crate::{net::check_io, registry::RegistryRef, ReadyRef};
 
 pub enum Action {
     /// Send a packet to a peer.
@@ -39,24 +36,23 @@ pub struct SocketInfo {
 #[instrument("udp::bind", skip_all)]
 pub fn bind(
     world: &mut World,
-    registry: RegistryHandle,
+    registry: RegistryRef,
     addr: SocketAddr,
     event_sender: Sender<RecvEvent>,
 ) -> Result<(Sender<Action>, SocketInfo), Error> {
-    let (actor, sender, socket) = Service::new(registry, addr, event_sender)?;
+    let (actor, socket) = Service::new(registry, addr, event_sender)?;
+    let actions = actor.actions.sender();
     world.insert("udp-socket", actor)?;
 
-    Ok((sender, socket))
+    Ok((actions, socket))
 }
 
 struct Service {
     actions: Mailbox<Action>,
     events: Sender<RecvEvent>,
-    ready: Mailbox<ReadyEvent>,
 
-    registry: RegistryHandle,
     socket: mio::net::UdpSocket,
-    token: Token,
+    ready: ReadyRef,
 
     buffer: BytesMut,
     queue: VecDeque<SendAction>,
@@ -64,39 +60,40 @@ struct Service {
 
 impl Service {
     fn new(
-        registry: RegistryHandle,
+        registry: RegistryRef,
         addr: SocketAddr,
         events: Sender<RecvEvent>,
-    ) -> Result<(Self, Sender<Action>, SocketInfo), Error> {
+    ) -> Result<(Self, SocketInfo), Error> {
         event!(Level::DEBUG, "binding");
 
         let actions = Mailbox::default();
-        let ready = Mailbox::default();
-
-        let action_sender = actions.sender();
-        let ready_sender = ready.sender();
 
         // Create the socket
         let mut socket = mio::net::UdpSocket::bind(addr)?;
         let local_addr = socket.local_addr()?;
 
         // Register the socket for ready events
-        let token = registry.register(&mut socket, Interest::READABLE, ready_sender)?;
+        let ready = registry.register(&mut socket, Interest::READABLE)?;
 
         let value = Self {
             actions,
             events,
-            ready,
 
-            registry,
             socket,
-            token,
+            ready,
 
             buffer: BytesMut::new(),
             queue: VecDeque::new(),
         };
         let socket = SocketInfo { local_addr };
-        Ok((value, action_sender, socket))
+        Ok((value, socket))
+    }
+}
+
+impl Drop for Service {
+    fn drop(&mut self) {
+        event!(Level::DEBUG, "closing");
+        self.ready.deregister(&mut self.socket);
     }
 }
 
@@ -105,7 +102,7 @@ impl Actor for Service {
         let signal = world.signal(meta.id());
 
         self.actions.set_signal(signal.clone());
-        self.ready.set_signal(signal);
+        self.ready.set_signal(signal)?;
 
         Ok(())
     }
@@ -139,30 +136,21 @@ impl Service {
 
         // Reregister so we can receive write events
         if should_register {
-            self.registry.reregister(
-                &mut self.socket,
-                self.token,
-                Interest::READABLE | Interest::WRITABLE,
-            )?;
+            self.ready
+                .reregister(&mut self.socket, Interest::READABLE | Interest::WRITABLE)?;
         }
 
         Ok(())
     }
 
     fn poll_ready(&mut self) -> Result<(), Error> {
-        let mut readable = false;
-        let mut writable = false;
-
-        while let Some(ready) = self.ready.recv() {
-            readable |= ready.readable;
-            writable |= ready.writable;
-        }
+        let state = self.ready.take()?;
 
         // Handle current state if the socket is ready
-        if readable {
+        if state.readable {
             self.poll_read()?
         }
-        if writable {
+        if state.writable {
             self.poll_write()?
         }
 
@@ -213,8 +201,8 @@ impl Service {
 
         // If we have nothing left, remove the writable registry
         if self.queue.is_empty() {
-            self.registry
-                .reregister(&mut self.socket, self.token, Interest::READABLE)?;
+            self.ready
+                .reregister(&mut self.socket, Interest::READABLE)?;
         }
 
         Ok(())
@@ -237,12 +225,5 @@ impl Service {
         self.queue.pop_front();
 
         Ok(true)
-    }
-}
-
-impl Drop for Service {
-    fn drop(&mut self) {
-        event!(Level::DEBUG, "closing");
-        self.registry.deregister(&mut self.socket, self.token);
     }
 }

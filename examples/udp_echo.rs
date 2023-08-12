@@ -7,7 +7,7 @@ use stewart::{
     message::{Mailbox, Sender},
     Actor, Metadata, World,
 };
-use stewart_mio::{net::udp, Registry, RegistryHandle};
+use stewart_mio::{net::udp, Registry, RegistryRef};
 use tracing::{event, Level};
 
 fn main() -> Result<(), Error> {
@@ -53,7 +53,7 @@ struct Service {
 }
 
 impl Service {
-    pub fn new(world: &mut World, registry: RegistryHandle) -> Result<Self, Error> {
+    pub fn new(world: &mut World, registry: RegistryRef) -> Result<Self, Error> {
         // Start the listen port
         let server_mailbox = Mailbox::default();
         let (server_sender, info) = udp::bind(

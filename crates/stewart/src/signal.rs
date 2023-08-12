@@ -11,7 +11,7 @@ use tracing::{event, instrument, Level};
 
 #[derive(Default)]
 pub struct SignalReceiver {
-    backend: Rc<RefCell<SignalShared>>,
+    shared: Rc<RefCell<SignalShared>>,
 }
 
 #[derive(Default)]
@@ -22,19 +22,19 @@ struct SignalShared {
 
 impl SignalReceiver {
     pub fn track(&self, index: Index) {
-        let mut backend = self.backend.borrow_mut();
-        backend.state.insert_at(index, false);
+        let mut shared = self.shared.borrow_mut();
+        shared.state.insert_at(index, false);
     }
 
     pub fn untrack(&self, index: Index) -> Result<(), Error> {
-        let mut backend = self.backend.borrow_mut();
+        let mut shared = self.shared.borrow_mut();
 
-        let value = backend
+        let value = shared
             .state
             .remove(index)
             .context("attempted to unregister actor that's not registered")?;
         if value {
-            backend.queue.retain(|v| *v != index);
+            shared.queue.retain(|v| *v != index);
         }
 
         Ok(())
@@ -42,18 +42,18 @@ impl SignalReceiver {
 
     pub fn signal(&self, index: Index) -> Signal {
         Signal {
-            backend: Rc::downgrade(&self.backend),
+            shared: Rc::downgrade(&self.shared),
             index,
         }
     }
 
     pub fn next(&self) -> Result<Option<Index>, Error> {
-        let mut backend = self.backend.borrow_mut();
+        let mut shared = self.shared.borrow_mut();
 
-        let result = backend.queue.pop_front();
+        let result = shared.queue.pop_front();
 
         if let Some(index) = result {
-            let state = backend
+            let state = shared
                 .state
                 .get_mut(index)
                 .context("failed to get state for next in queue")?;
@@ -67,7 +67,7 @@ impl SignalReceiver {
 /// Sends a signal to schedule an actor for processing in a `World`.
 #[derive(Clone)]
 pub struct Signal {
-    backend: Weak<RefCell<SignalShared>>,
+    shared: Weak<RefCell<SignalShared>>,
     index: Index,
 }
 
@@ -77,11 +77,11 @@ impl Signal {
     pub fn send(&self) -> Result<(), SendError> {
         event!(Level::DEBUG, "notifying actor");
 
-        let backend = self.backend.upgrade().context("world no longer exists")?;
-        let mut backend = backend.borrow_mut();
+        let shared = self.shared.upgrade().context("world no longer exists")?;
+        let mut shared = shared.borrow_mut();
 
         // Check actor exists
-        let Some(state) = backend.state.get_mut(self.index) else {
+        let Some(state) = shared.state.get_mut(self.index) else {
             return Err(anyhow!("attempted to signal actor that does not exist").into());
         };
 
@@ -93,7 +93,7 @@ impl Signal {
 
         // Add to the end of the queue
         *state = true;
-        backend.queue.push_back(self.index);
+        shared.queue.push_back(self.index);
 
         Ok(())
     }

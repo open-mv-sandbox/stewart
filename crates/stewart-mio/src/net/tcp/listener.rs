@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use anyhow::Error;
-use mio::{Interest, Token};
+use mio::Interest;
 use stewart::{
     message::{Mailbox, Sender},
     Actor, Metadata, World,
@@ -10,7 +10,7 @@ use tracing::{event, instrument, Level};
 
 use crate::{
     net::{check_io, tcp},
-    ReadyEvent, RegistryHandle,
+    ReadyRef, RegistryRef,
 };
 
 pub enum ListenerAction {
@@ -39,7 +39,7 @@ pub struct ConnectedEvent {
 #[instrument("tcp::listen", skip_all)]
 pub fn bind(
     world: &mut World,
-    registry: RegistryHandle,
+    registry: RegistryRef,
     addr: SocketAddr,
     event_sender: Sender<ListenerEvent>,
 ) -> Result<(Sender<ListenerAction>, ListenerInfo), Error> {
@@ -51,41 +51,38 @@ pub fn bind(
 }
 
 struct Service {
-    registry: RegistryHandle,
+    registry: RegistryRef,
     actions: Mailbox<ListenerAction>,
     events: Sender<ListenerEvent>,
-    ready: Mailbox<ReadyEvent>,
 
     listener: mio::net::TcpListener,
-    token: Token,
+    ready: ReadyRef,
 }
 
 impl Service {
     fn new(
-        registry: RegistryHandle,
+        registry: RegistryRef,
         addr: SocketAddr,
         events: Sender<ListenerEvent>,
     ) -> Result<(Self, ListenerInfo), Error> {
         event!(Level::DEBUG, "binding");
 
         let actions = Mailbox::default();
-        let ready = Mailbox::default();
 
         // Create the socket
         let mut listener = mio::net::TcpListener::bind(addr)?;
         let local_addr = listener.local_addr()?;
 
         // Register the socket for ready events
-        let token = registry.register(&mut listener, Interest::READABLE, ready.sender())?;
+        let ready = registry.register(&mut listener, Interest::READABLE)?;
 
         let value = Self {
             registry,
             actions,
             events,
-            ready,
 
             listener,
-            token,
+            ready,
         };
         let listener = ListenerInfo { local_addr };
         Ok((value, listener))
@@ -98,7 +95,7 @@ impl Drop for Service {
 
         let _ = self.events.send(ListenerEvent::Closed);
 
-        self.registry.deregister(&mut self.listener, self.token);
+        self.ready.deregister(&mut self.listener);
     }
 }
 
@@ -107,18 +104,15 @@ impl Actor for Service {
         let signal = world.signal(meta.id());
 
         self.actions.set_signal(signal.clone());
-        self.ready.set_signal(signal);
+        self.ready.set_signal(signal)?;
 
         Ok(())
     }
 
     fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        let mut readable = false;
-        while let Some(ready) = self.ready.recv() {
-            readable |= ready.readable;
-        }
+        let state = self.ready.take()?;
 
-        if readable {
+        if state.readable {
             self.on_listener_ready(world)?;
         }
 
