@@ -11,7 +11,7 @@ use tracing::{event, Level};
 
 use crate::{
     parser::{HttpParser, ParserEvent},
-    HttpEvent, RequestAction, RequestEvent,
+    HttpEvent, HttpHeader, RequestAction, RequestEvent,
 };
 
 pub enum ConnectionEvent {
@@ -50,7 +50,7 @@ struct Service {
 }
 
 enum RequestState {
-    New,
+    New { header: HttpHeader },
     Pending { actions: Mailbox<RequestAction> },
 }
 
@@ -142,11 +142,9 @@ impl Service {
             if let Some(event) = event {
                 match event {
                     ParserEvent::Header(header) => {
-                        // Temporary debug print
-                        println!("H: {:?}", header);
-
                         // Track the request
-                        self.requests.push_back(RequestState::New);
+                        let state = RequestState::New { header };
+                        self.requests.push_back(state);
                     }
                 }
             }
@@ -168,7 +166,7 @@ impl Service {
     fn process_requests(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         // Check new requests we have to send out
         for request in &mut self.requests {
-            let RequestState::New = request else { continue };
+            let RequestState::New { header } = request else { continue };
 
             // Create the mailbox to send a response back through
             let actions = Mailbox::default();
@@ -177,6 +175,7 @@ impl Service {
 
             // Send the request event
             let event = RequestEvent {
+                header: header.clone(),
                 actions: actions.sender(),
             };
             self.http_events.send(HttpEvent::Request(event))?;

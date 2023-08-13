@@ -51,6 +51,7 @@ impl Actor for Service {
             let HttpEvent::Request(request) = event;
 
             event!(Level::INFO, "received request");
+            println!("HEADER: {:?}", request.header);
 
             let body = RESPONSE.into();
             request.actions.send(RequestAction::SendResponse(body))?;

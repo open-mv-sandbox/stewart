@@ -14,6 +14,8 @@ pub enum HttpEvent {
 }
 
 pub struct RequestEvent {
+    pub header: HttpHeader,
+
     /// Sender for actions specific to this request.
     ///
     /// Multiplexing behavior is up to specific connection types.
@@ -24,4 +26,15 @@ pub struct RequestEvent {
 
 pub enum RequestAction {
     SendResponse(Bytes),
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct HttpHeader {
+    pub fields: Vec<HttpField>,
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct HttpField {
+    pub key: Bytes,
+    pub value: Bytes,
 }
