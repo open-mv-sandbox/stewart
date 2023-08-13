@@ -1,6 +1,5 @@
 use std::{
     cell::RefCell,
-    collections::HashMap,
     rc::{Rc, Weak},
     time::Duration,
 };
@@ -8,6 +7,7 @@ use std::{
 use anyhow::{Context as _, Error};
 use mio::{event::Source, Events, Interest, Poll, Token};
 use stewart::Signal;
+use thunderdome::{Arena, Index};
 use tracing::{event, Level};
 
 /// Mio context registry.
@@ -21,8 +21,7 @@ impl Registry {
 
         let shared = RegistryShared {
             poll,
-            next_token: 0,
-            tokens: HashMap::new(),
+            tokens: Arena::new(),
         };
 
         let value = Self {
@@ -50,9 +49,10 @@ impl Registry {
     pub(crate) fn update_state(&self, token: Token, ready: ReadyState) -> Result<(), Error> {
         let mut shared = self.shared.borrow_mut();
 
+        let index = Index::from_bits(token.0 as u64).context("invalid token")?;
         let entry = shared
             .tokens
-            .get_mut(&token)
+            .get_mut(index)
             .context("failed to get token entry")?;
 
         let signal = entry
@@ -91,7 +91,6 @@ impl RegistryRef {
         let mut shared = shared.borrow_mut();
 
         // Store the ready callback
-        let token = shared.token();
         let state = ReadyState {
             readable: false,
             writable: false,
@@ -100,14 +99,15 @@ impl RegistryRef {
             signal: None,
             state,
         };
-        shared.tokens.insert(token, entry);
+        let index = shared.tokens.insert(entry);
 
         // Register with the generated token
+        let token = Token(index.to_bits() as usize);
         shared.poll.registry().register(source, token, interest)?;
 
         let ready = ReadyRef {
             shared: self.shared.clone(),
-            token,
+            index,
         };
         Ok(ready)
     }
@@ -116,7 +116,7 @@ impl RegistryRef {
 /// Reference to a tracked ready state.
 pub struct ReadyRef {
     shared: Weak<RefCell<RegistryShared>>,
-    token: Token,
+    index: Index,
 }
 
 impl ReadyRef {
@@ -127,10 +127,8 @@ impl ReadyRef {
         let shared = try_shared(&self.shared)?;
         let shared = shared.borrow();
 
-        shared
-            .poll
-            .registry()
-            .reregister(source, self.token, interest)?;
+        let token = Token(self.index.to_bits() as usize);
+        shared.poll.registry().reregister(source, token, interest)?;
 
         Ok(())
     }
@@ -149,7 +147,7 @@ impl ReadyRef {
         let result = shared.poll.registry().deregister(source);
 
         // Remove the token entry
-        shared.tokens.remove(&self.token);
+        shared.tokens.remove(self.index);
 
         if let Err(error) = result {
             event!(Level::ERROR, ?error, "failed to deregister");
@@ -162,7 +160,7 @@ impl ReadyRef {
 
         let entry = shared
             .tokens
-            .get_mut(&self.token)
+            .get_mut(self.index)
             .context("failed to get token entry")?;
         entry.signal = Some(signal);
 
@@ -176,7 +174,7 @@ impl ReadyRef {
 
         let entry = shared
             .tokens
-            .get_mut(&self.token)
+            .get_mut(self.index)
             .context("failed to get token entry")?;
 
         let empty = ReadyState {
@@ -191,11 +189,7 @@ impl ReadyRef {
 
 struct RegistryShared {
     poll: Poll,
-    /// TODO: We can start using an `Arena`.
-    next_token: usize,
-    /// TODO: Since ready events always get 'squashed', we can manually track that in an
-    /// Rc<RefCel<_>>, instead of sending around messages.
-    tokens: HashMap<Token, TokenEntry>,
+    tokens: Arena<TokenEntry>,
 }
 
 pub struct TokenEntry {
@@ -207,15 +201,6 @@ pub struct TokenEntry {
 pub struct ReadyState {
     pub readable: bool,
     pub writable: bool,
-}
-
-impl RegistryShared {
-    /// Create a new registry-unique token.
-    fn token(&mut self) -> Token {
-        let token = self.next_token;
-        self.next_token += 1;
-        Token(token)
-    }
 }
 
 fn try_shared(

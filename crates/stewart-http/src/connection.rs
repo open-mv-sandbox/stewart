@@ -9,7 +9,10 @@ use stewart::{
 use stewart_mio::net::tcp;
 use tracing::{event, Level};
 
-use crate::{HttpEvent, RequestAction, RequestEvent};
+use crate::{
+    parser::{HttpParser, ParserEvent},
+    HttpEvent, RequestAction, RequestEvent,
+};
 
 pub enum ConnectionEvent {
     Closed,
@@ -35,15 +38,20 @@ pub fn open(
 }
 
 struct Service {
-    tcp_events: Mailbox<tcp::ConnectionEvent>,
-    tcp_actions: Sender<tcp::ConnectionAction>,
     actions: Mailbox<ConnectionAction>,
     events: Sender<ConnectionEvent>,
+    tcp_events: Mailbox<tcp::ConnectionEvent>,
+    tcp_actions: Sender<tcp::ConnectionAction>,
     http_events: Sender<HttpEvent>,
 
     tcp_closed: bool,
-    receive_buffer: BytesMut,
-    pending_requests: VecDeque<Mailbox<RequestAction>>,
+    parser: HttpParser,
+    requests: VecDeque<RequestState>,
+}
+
+enum RequestState {
+    New,
+    Pending { actions: Mailbox<RequestAction> },
 }
 
 impl Service {
@@ -56,15 +64,15 @@ impl Service {
         event!(Level::DEBUG, "connection opened");
 
         Self {
-            tcp_events,
-            tcp_actions,
             actions: Mailbox::default(),
             events,
+            tcp_events,
+            tcp_actions,
             http_events,
 
             tcp_closed: false,
-            receive_buffer: BytesMut::new(),
-            pending_requests: VecDeque::new(),
+            parser: HttpParser::default(),
+            requests: VecDeque::new(),
         }
     }
 }
@@ -99,20 +107,7 @@ impl Actor for Service {
         }
 
         self.process_actions()?;
-        self.process_received(world, meta)?;
-
-        // Check requests we can resolve
-        // HTTP 1.1 sends back responses in the same order as requests, so we only check the first
-        while let Some(request) = self.pending_requests.front() {
-            // Check if we got a response to send
-            let Some(action) = request.recv() else { break };
-            let RequestAction::SendResponse(body) = action;
-
-            self.send_response(body)?;
-
-            // Remove this resolved request
-            self.pending_requests.pop_front();
-        }
+        self.process_requests(world, meta)?;
 
         Ok(())
     }
@@ -123,8 +118,7 @@ impl Service {
         while let Some(event) = self.tcp_events.recv() {
             match event {
                 tcp::ConnectionEvent::Recv(event) => {
-                    event!(Level::TRACE, bytes = event.data.len(), "received data");
-                    self.receive_buffer.extend(&event.data);
+                    self.handle_recv(event);
                 }
                 tcp::ConnectionEvent::Closed => {
                     event!(Level::DEBUG, "connection closed");
@@ -136,6 +130,27 @@ impl Service {
         }
 
         Ok(())
+    }
+
+    fn handle_recv(&mut self, mut event: tcp::RecvEvent) {
+        event!(Level::TRACE, bytes = event.data.len(), "received data");
+
+        // Consume data into the parser
+        while !event.data.is_empty() {
+            let event = self.parser.consume(&mut event.data);
+
+            if let Some(event) = event {
+                match event {
+                    ParserEvent::Header(header) => {
+                        // Temporary debug print
+                        println!("H: {:?}", header);
+
+                        // Track the request
+                        self.requests.push_back(RequestState::New);
+                    }
+                }
+            }
+        }
     }
 
     fn process_actions(&mut self) -> Result<(), Error> {
@@ -150,42 +165,37 @@ impl Service {
         Ok(())
     }
 
-    /// Process pending data previously received, but not yet processed.
-    fn process_received(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        // TODO: Instead of checking every time if we have a full header's worth, do something
-        // smarter.
-        // TODO: Handle requests with body content
-
-        loop {
-            // Check if we have a full request worth of data left in the buffer
-            let location = self
-                .receive_buffer
-                .windows(4)
-                .enumerate()
-                .find(|(_, window)| window == b"\r\n\r\n")
-                .map(|(i, _)| i);
-            let Some(location) = location else { break; };
-
-            event!(Level::DEBUG, "received request");
-
-            // Split off the request we have to process
-            let request = self.receive_buffer.split_to(location + 4);
-            let data = std::str::from_utf8(&request)?;
-            println!("REQUEST: {:?}", data);
+    fn process_requests(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        // Check new requests we have to send out
+        for request in &mut self.requests {
+            let RequestState::New = request else { continue };
 
             // Create the mailbox to send a response back through
-            let mailbox = Mailbox::default();
+            let actions = Mailbox::default();
             let signal = world.signal(meta.id());
-            mailbox.set_signal(signal);
+            actions.set_signal(signal);
 
             // Send the request event
             let event = RequestEvent {
-                actions: mailbox.sender(),
+                actions: actions.sender(),
             };
             self.http_events.send(HttpEvent::Request(event))?;
 
-            // Track the request
-            self.pending_requests.push_back(mailbox);
+            // Continue tracking the request
+            *request = RequestState::Pending { actions };
+        }
+
+        // Check requests we can resolve
+        // HTTP 1.1 sends back responses in the same order as requests, so we only check the first
+        while let Some(RequestState::Pending { actions }) = self.requests.front() {
+            // Check if we got a response to send
+            let Some(action) = actions.recv() else { break };
+            let RequestAction::SendResponse(body) = action;
+
+            self.send_response(body)?;
+
+            // Remove this resolved request
+            self.requests.pop_front();
         }
 
         Ok(())

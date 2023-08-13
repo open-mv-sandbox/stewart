@@ -2,6 +2,7 @@
 
 mod connection;
 mod listener;
+mod parser;
 
 use bytes::Bytes;
 use stewart::message::Sender;

@@ -20,7 +20,7 @@ fn main() -> Result<(), Error> {
 
     // Start the actor
     let actor = Service::new(&mut world, registry.handle())?;
-    world.insert("echo-example", actor)?;
+    world.insert("tcp-echo", actor)?;
 
     // Run the event loop
     stewart_mio::run_event_loop(&mut world, &registry)?;

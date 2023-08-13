@@ -20,7 +20,7 @@ fn main() -> Result<(), Error> {
     let actor = Service::new(&mut world, registry.handle())?;
     let server_addr = actor.server_addr;
     let client_send = actor.client_sender.clone();
-    world.insert("echo-example", actor)?;
+    world.insert("udp-echo", actor)?;
 
     // Send a message to be echo'd
     let packet = udp::SendAction {
