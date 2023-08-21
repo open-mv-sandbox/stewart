@@ -9,31 +9,41 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, instrument, Level};
 
+// TODO: Consider if we can eliminate `Signal` entirely, in favor of `world.send_signal(id)`, or at
+// least make it separate from `World`.
+
 #[derive(Default)]
-pub struct SignalReceiver {
+pub struct SignalRegistry {
     shared: Rc<RefCell<SignalShared>>,
 }
 
 #[derive(Default)]
 struct SignalShared {
-    state: Arena<bool>,
+    state: Arena<SignalState>,
     queue: VecDeque<Index>,
 }
 
-impl SignalReceiver {
-    pub fn track(&self, index: Index) {
+struct SignalState {
+    pending: bool,
+}
+
+impl SignalRegistry {
+    /// Add a new tracked actor to the registry.
+    pub fn insert(&self, index: Index) {
         let mut shared = self.shared.borrow_mut();
-        shared.state.insert_at(index, false);
+        let state = SignalState { pending: false };
+        shared.state.insert_at(index, state);
     }
 
-    pub fn untrack(&self, index: Index) -> Result<(), Error> {
+    /// Remove an actor from the registry.
+    pub fn remove(&self, index: Index) -> Result<(), Error> {
         let mut shared = self.shared.borrow_mut();
 
-        let value = shared
+        let state = shared
             .state
             .remove(index)
             .context("attempted to unregister actor that's not registered")?;
-        if value {
+        if state.pending {
             shared.queue.retain(|v| *v != index);
         }
 
@@ -47,6 +57,7 @@ impl SignalReceiver {
         }
     }
 
+    /// Get the next received signal.
     pub fn next(&self) -> Result<Option<Index>, Error> {
         let mut shared = self.shared.borrow_mut();
 
@@ -57,7 +68,7 @@ impl SignalReceiver {
                 .state
                 .get_mut(index)
                 .context("failed to get state for next in queue")?;
-            *state = false;
+            state.pending = false;
         }
 
         Ok(result)
@@ -85,14 +96,14 @@ impl Signal {
             return Err(anyhow!("attempted to signal actor that does not exist").into());
         };
 
-        // Don't double-schedule
-        if *state {
-            event!(Level::TRACE, "actor already scheduled");
+        // Don't double-signal
+        if state.pending {
+            event!(Level::TRACE, "actor already signalled");
             return Ok(());
         }
 
         // Add to the end of the queue
-        *state = true;
+        state.pending = true;
         shared.queue.push_back(self.index);
 
         Ok(())

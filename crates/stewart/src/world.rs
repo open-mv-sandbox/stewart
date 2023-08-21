@@ -3,13 +3,13 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, instrument, span, Level};
 
-use crate::{signal::SignalReceiver, Actor, Metadata, Signal};
+use crate::{signal::SignalRegistry, Actor, Metadata, Signal};
 
 /// Thread-local actor tracking and execution system.
 #[derive(Default)]
 pub struct World {
     actors: Arena<ActorEntry>,
-    receiver: SignalReceiver,
+    receiver: SignalRegistry,
 }
 
 struct ActorEntry {
@@ -54,7 +54,7 @@ impl World {
         let index = self.actors.insert(entry);
 
         // Track it in the receiver
-        self.receiver.track(index);
+        self.receiver.insert(index);
 
         // Call the `start` callback to let the actor bind its `Signal`
         self.call_actor(index, Actor::register)
@@ -68,7 +68,7 @@ impl World {
     pub fn remove(&mut self, id: Id) -> Result<(), Error> {
         event!(Level::DEBUG, "removing actor");
 
-        self.receiver.untrack(id.index)?;
+        self.receiver.remove(id.index)?;
         self.actors
             .remove(id.index)
             .context("failed to find actor")?;
@@ -145,7 +145,7 @@ impl World {
     }
 }
 
-/// Identifier of an actor inserted into a world.
+/// Identifier of an actor inserted into a `World`.
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Id {
     index: Index,

@@ -6,4 +6,4 @@
 # Stewart
 
 - [Introduction](./stewart/index.md)
-- [Message](./stewart/message.md)
+- [Your First Actor](./stewart/your-first-actor.md)

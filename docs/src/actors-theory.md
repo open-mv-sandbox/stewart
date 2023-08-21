@@ -8,9 +8,9 @@ This theory primer gives a quick *heavily generalized* explanations of what acto
 Actors are a method of organizing "asynchronous" components of software.
 Actor systems typically, but not always, have the following traits:
 
-- Actors maintain a persistent state.
-- Actors communicate with other actors, and the outside world, through messages.
-- Actors can 'suspended' their execution, until new messages arrive.
+- Maintain a persistent state.
+- Communicate with other actors, and the outside world, through messages.
+- 'Suspended' execution, until new messages arrive.
 
 This is very similar to the idea of "futures" or "promises".
 This "async-await" model of futures is used to 'suspend' a function until the response it's waiting
