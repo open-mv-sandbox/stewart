@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use anyhow::Error;
 use mio::Interest;
 use stewart::{
-    message::{Mailbox, Sender},
+    message::{Mailbox, Sender, Signal},
     Actor, Metadata, World,
 };
 use tracing::{event, instrument, Level};
@@ -43,9 +43,11 @@ pub fn bind(
     addr: SocketAddr,
     event_sender: Sender<ListenerEvent>,
 ) -> Result<(Sender<ListenerAction>, ListenerInfo), Error> {
-    let (actor, info) = Service::new(registry, addr, event_sender)?;
+    let (actor, signal, info) = Service::new(registry, addr, event_sender)?;
     let actions = actor.actions.sender();
-    world.insert("tcp-listener", actor)?;
+
+    let id = world.insert("tcp-listener", actor);
+    signal.set_id(id);
 
     Ok((actions, info))
 }
@@ -64,19 +66,20 @@ impl Service {
         registry: RegistryRef,
         addr: SocketAddr,
         events: Sender<ListenerEvent>,
-    ) -> Result<(Self, ListenerInfo), Error> {
+    ) -> Result<(Self, Signal, ListenerInfo), Error> {
         event!(Level::DEBUG, "binding");
 
-        let actions = Mailbox::default();
+        let signal = Signal::default();
+        let actions = Mailbox::new(signal.clone());
 
         // Create the socket
         let mut listener = mio::net::TcpListener::bind(addr)?;
         let local_addr = listener.local_addr()?;
 
         // Register the socket for ready events
-        let ready = registry.register(&mut listener, Interest::READABLE)?;
+        let ready = registry.register(&mut listener, Interest::READABLE, signal.clone())?;
 
-        let value = Self {
+        let this = Self {
             registry,
             actions,
             events,
@@ -85,30 +88,17 @@ impl Service {
             ready,
         };
         let listener = ListenerInfo { local_addr };
-        Ok((value, listener))
+        Ok((this, signal, listener))
     }
 }
 
 impl Drop for Service {
     fn drop(&mut self) {
-        event!(Level::DEBUG, "closing");
-
-        let _ = self.events.send(ListenerEvent::Closed);
-
         self.ready.deregister(&mut self.listener);
     }
 }
 
 impl Actor for Service {
-    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        let signal = world.signal(meta.id());
-
-        self.actions.set_signal(signal.clone());
-        self.ready.set_signal(signal)?;
-
-        Ok(())
-    }
-
     fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         let state = self.ready.take()?;
 
@@ -117,6 +107,8 @@ impl Actor for Service {
         }
 
         while let Some(_action) = self.actions.recv() {
+            event!(Level::DEBUG, "stopping");
+            self.events.send(world, ListenerEvent::Closed)?;
             meta.set_stop();
         }
 
@@ -131,7 +123,7 @@ impl Service {
             event!(Level::DEBUG, ?remote_addr, "stream accepted");
 
             // Start actor
-            let event_mailbox = Mailbox::default();
+            let event_mailbox = Mailbox::floating();
             let actions_sender =
                 tcp::stream::open(world, self.registry.clone(), stream, event_mailbox.sender())?;
 
@@ -142,7 +134,7 @@ impl Service {
                 actions: actions_sender,
                 events: event_mailbox,
             };
-            self.events.send(ListenerEvent::Connected(event))?;
+            self.events.send(world, ListenerEvent::Connected(event))?;
         }
 
         Ok(())

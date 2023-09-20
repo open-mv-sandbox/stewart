@@ -4,7 +4,7 @@ use anyhow::Error;
 use bytes::{Bytes, BytesMut};
 use mio::Interest;
 use stewart::{
-    message::{Mailbox, Sender},
+    message::{Mailbox, Sender, Signal},
     Actor, Metadata, World,
 };
 use tracing::{event, instrument, Level};
@@ -40,11 +40,13 @@ pub fn bind(
     addr: SocketAddr,
     event_sender: Sender<RecvEvent>,
 ) -> Result<(Sender<Action>, SocketInfo), Error> {
-    let (actor, socket) = Service::new(registry, addr, event_sender)?;
+    let (actor, signal, info) = Service::new(registry, addr, event_sender)?;
     let actions = actor.actions.sender();
-    world.insert("udp-socket", actor)?;
 
-    Ok((actions, socket))
+    let id = world.insert("udp-socket", actor);
+    signal.set_id(id);
+
+    Ok((actions, info))
 }
 
 struct Service {
@@ -63,19 +65,20 @@ impl Service {
         registry: RegistryRef,
         addr: SocketAddr,
         events: Sender<RecvEvent>,
-    ) -> Result<(Self, SocketInfo), Error> {
+    ) -> Result<(Self, Signal, SocketInfo), Error> {
         event!(Level::DEBUG, "binding");
 
-        let actions = Mailbox::default();
+        let signal = Signal::default();
+        let actions = Mailbox::new(signal.clone());
 
         // Create the socket
         let mut socket = mio::net::UdpSocket::bind(addr)?;
         let local_addr = socket.local_addr()?;
 
         // Register the socket for ready events
-        let ready = registry.register(&mut socket, Interest::READABLE)?;
+        let ready = registry.register(&mut socket, Interest::READABLE, signal.clone())?;
 
-        let value = Self {
+        let this = Self {
             actions,
             events,
 
@@ -85,8 +88,8 @@ impl Service {
             buffer: BytesMut::new(),
             queue: VecDeque::new(),
         };
-        let socket = SocketInfo { local_addr };
-        Ok((value, socket))
+        let info = SocketInfo { local_addr };
+        Ok((this, signal, info))
     }
 }
 
@@ -98,18 +101,9 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        let signal = world.signal(meta.id());
-
-        self.actions.set_signal(signal.clone());
-        self.ready.set_signal(signal)?;
-
-        Ok(())
-    }
-
-    fn process(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+    fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         self.poll_actions(meta)?;
-        self.poll_ready()?;
+        self.poll_ready(world)?;
 
         Ok(())
     }
@@ -143,12 +137,12 @@ impl Service {
         Ok(())
     }
 
-    fn poll_ready(&mut self) -> Result<(), Error> {
+    fn poll_ready(&mut self, world: &mut World) -> Result<(), Error> {
         let state = self.ready.take()?;
 
         // Handle current state if the socket is ready
         if state.readable {
-            self.poll_read()?
+            self.poll_read(world)?
         }
         if state.writable {
             self.poll_write()?
@@ -157,15 +151,15 @@ impl Service {
         Ok(())
     }
 
-    fn poll_read(&mut self) -> Result<(), Error> {
+    fn poll_read(&mut self, world: &mut World) -> Result<(), Error> {
         event!(Level::TRACE, "polling read");
 
-        while self.try_recv()? {}
+        while self.try_recv(world)? {}
 
         Ok(())
     }
 
-    fn try_recv(&mut self) -> Result<bool, Error> {
+    fn try_recv(&mut self, world: &mut World) -> Result<bool, Error> {
         // Max size of a UDP packet
         self.buffer.resize(65536, 0);
 
@@ -189,7 +183,7 @@ impl Service {
             arrived,
             data,
         };
-        self.events.send(packet)?;
+        self.events.send(world, packet)?;
 
         Ok(true)
     }

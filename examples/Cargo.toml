@@ -10,7 +10,7 @@ bytes.workspace = true
 rcgen.workspace = true
 rustls.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 uuid = { workspace = true, features = ["v4"] }
 stewart.workspace = true
 stewart-http.workspace = true

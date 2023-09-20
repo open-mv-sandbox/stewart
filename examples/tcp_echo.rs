@@ -3,7 +3,7 @@ mod utils;
 use anyhow::Error;
 use bytes::Bytes;
 use stewart::{
-    message::{Mailbox, Sender},
+    message::{Mailbox, Sender, Signal},
     Actor, Metadata, World,
 };
 use stewart_mio::{
@@ -19,8 +19,10 @@ fn main() -> Result<(), Error> {
     let registry = Registry::new()?;
 
     // Start the actor
-    let actor = Service::new(&mut world, registry.handle())?;
-    world.insert("tcp-echo", actor)?;
+    let signal = Signal::default();
+    let actor = Service::new(&mut world, signal.clone(), registry.handle())?;
+    let id = world.insert("tcp-echo", actor);
+    signal.set_id(id);
 
     // Run the event loop
     stewart_mio::run_event_loop(&mut world, &registry)?;
@@ -29,14 +31,15 @@ fn main() -> Result<(), Error> {
 }
 
 struct Service {
+    signal: Signal,
     server_mailbox: Mailbox<tcp::ListenerEvent>,
     _server_sender: Sender<tcp::ListenerAction>,
     connections: Vec<Connection>,
 }
 
 impl Service {
-    pub fn new(world: &mut World, registry: RegistryRef) -> Result<Self, Error> {
-        let server_mailbox = Mailbox::default();
+    pub fn new(world: &mut World, signal: Signal, registry: RegistryRef) -> Result<Self, Error> {
+        let server_mailbox = Mailbox::new(signal.clone());
 
         // Start the listen port
         let (server_sender, server_info) = tcp::bind(
@@ -47,26 +50,20 @@ impl Service {
         )?;
         event!(Level::INFO, addr = ?server_info.local_addr, "listening");
 
-        let actor = Service {
+        let this = Service {
+            signal,
             server_mailbox,
             _server_sender: server_sender,
             connections: Vec::new(),
         };
-        Ok(actor)
+        Ok(this)
     }
 }
 
 impl Actor for Service {
-    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        let signal = world.signal(meta.id());
-        self.server_mailbox.set_signal(signal);
-
-        Ok(())
-    }
-
     fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         self.poll_listener(world, meta)?;
-        self.poll_connections()?;
+        self.poll_connections(world)?;
 
         Ok(())
     }
@@ -82,11 +79,12 @@ impl Service {
                     // Send a greeting message
                     let data: Bytes = "HELLO WORLD\n".into();
                     let action = tcp::SendAction { data };
-                    event.actions.send(tcp::ConnectionAction::Send(action))?;
+                    event
+                        .actions
+                        .send(world, tcp::ConnectionAction::Send(action))?;
 
                     // Keep track of the stream
-                    let signal = world.signal(meta.id());
-                    event.events.set_signal(signal);
+                    event.events.set_signal(self.signal.clone());
                     let connection = Connection {
                         event,
                         pending: String::new(),
@@ -101,9 +99,9 @@ impl Service {
         Ok(())
     }
 
-    fn poll_connections(&mut self) -> Result<(), Error> {
+    fn poll_connections(&mut self, world: &mut World) -> Result<(), Error> {
         for connection in &mut self.connections {
-            connection.poll()?;
+            connection.poll(world)?;
         }
 
         self.connections.retain(|c| !c.closed);
@@ -119,7 +117,7 @@ struct Connection {
 }
 
 impl Connection {
-    fn poll(&mut self) -> Result<(), Error> {
+    fn poll(&mut self, world: &mut World) -> Result<(), Error> {
         // Handle any incoming TCP stream events
         while let Some(event) = self.event.events.recv() {
             match event {
@@ -156,7 +154,7 @@ impl Connection {
 
                 let packet = tcp::SendAction { data: reply.into() };
                 let message = tcp::ConnectionAction::Send(packet);
-                self.event.actions.send(message)?;
+                self.event.actions.send(world, message)?;
             }
 
             self.pending = remaining;

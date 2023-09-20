@@ -4,59 +4,60 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use anyhow::{anyhow, Context as _, Error};
+use anyhow::{anyhow, Context, Error};
 use thiserror::Error;
 
-use crate::Signal;
+use crate::{message::Signal, World};
 
 /// Shared *single-threaded* multi-sender multi-receiver message queue.
 ///
 /// An instance of `Mailbox` is considered 'authoritative'.
-/// You can use it to create senders, and register actors that should be notified.
-///
-/// You are not actually required to a mailbox, if your actor has a different mechanism for being
-/// notified.
+/// You can use it to create senders, and set the actors that should be notified.
 pub struct Mailbox<M> {
-    inner: Rc<RefCell<MailboxInner<M>>>,
+    shared: Rc<RefCell<MailboxShared<M>>>,
 }
 
-struct MailboxInner<M> {
+struct MailboxShared<M> {
     queue: VecDeque<M>,
     notify: Notify,
 }
 
 enum Notify {
-    Pending,
     Signal(Signal),
     Floating,
 }
 
-impl<M> Default for Mailbox<M> {
-    fn default() -> Self {
-        let inner = MailboxInner {
+impl<M> Mailbox<M> {
+    /// Create a new mailbox.
+    pub fn new(signal: Signal) -> Self {
+        let shared = MailboxShared {
             queue: VecDeque::new(),
-            notify: Notify::Pending,
+            notify: Notify::Signal(signal),
         };
 
         Self {
-            inner: Rc::new(RefCell::new(inner)),
+            shared: Rc::new(RefCell::new(shared)),
         }
     }
-}
 
-impl<M> Clone for Mailbox<M> {
-    fn clone(&self) -> Self {
+    /// Create a new floating mailbox.
+    ///
+    /// Floating mailboxes do not signal an actor, but can still receive messages like normal.
+    pub fn floating() -> Self {
+        let shared = MailboxShared {
+            queue: VecDeque::new(),
+            notify: Notify::Floating,
+        };
+
         Self {
-            inner: self.inner.clone(),
+            shared: Rc::new(RefCell::new(shared)),
         }
     }
-}
 
-impl<M> Mailbox<M> {
     /// Create a new `Sender` that senders to this mailbox.
     pub fn sender(&self) -> Sender<M> {
         Sender {
-            inner: Rc::downgrade(&self.inner),
+            shared: Rc::downgrade(&self.shared),
         }
     }
 
@@ -64,55 +65,54 @@ impl<M> Mailbox<M> {
     ///
     /// Only one signal can be set at a time, setting this will remove the previous value.
     pub fn set_signal(&self, signal: Signal) {
-        self.inner.borrow_mut().notify = Notify::Signal(signal);
+        self.shared.borrow_mut().notify = Notify::Signal(signal);
     }
 
     /// Set this mailbox to be managed externally from a `World`, not sending a signal.
     pub fn set_floating(&self) {
-        self.inner.borrow_mut().notify = Notify::Floating;
+        self.shared.borrow_mut().notify = Notify::Floating;
     }
 
     /// Get the next message, if any is available.
     pub fn recv(&self) -> Option<M> {
-        self.inner.borrow_mut().queue.pop_front()
+        self.shared.borrow_mut().queue.pop_front()
     }
 }
 
 /// Handle for sending messages to a mailbox.
 pub struct Sender<M> {
-    inner: Weak<RefCell<MailboxInner<M>>>,
+    shared: Weak<RefCell<MailboxShared<M>>>,
 }
 
 impl<M> Clone for Sender<M> {
     fn clone(&self) -> Self {
         Self {
-            inner: self.inner.clone(),
+            shared: self.shared.clone(),
         }
     }
 }
 
 impl<M> Sender<M> {
     /// Send a message to the target mailbox of this sender.
-    pub fn send(&self, message: M) -> Result<(), SendError> {
+    pub fn send(&self, world: &mut World, message: M) -> Result<(), SendError> {
         // Check if the mailbox is still available
-        let Some(inner) = self.inner.upgrade() else {
+        let Some(shared) = self.shared.upgrade() else {
             return Err(anyhow!("mailbox closed").into())
         };
-        let mut inner = inner.borrow_mut();
+        let mut shared = shared.borrow_mut();
 
         // Notify a listening actor, do this first, so we know there's no inner error first
-        match &inner.notify {
-            Notify::Pending => {
-                return Err(anyhow!("mailbox has no signal and isn't marked floating").into());
-            }
+        match &shared.notify {
             Notify::Signal(signal) => {
-                signal.send().context("failed to notify registered actor")?;
+                signal
+                    .send(world)
+                    .context("failed to send signal for message")?;
             }
             Notify::Floating => {}
         }
 
         // Apply the message to the queue
-        inner.queue.push_back(message);
+        shared.queue.push_back(message);
 
         Ok(())
     }

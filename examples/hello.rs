@@ -20,7 +20,7 @@ fn main() -> Result<(), Error> {
     event!(Level::INFO, "sending messages");
 
     // Mailboxes don't need to be associated with an actor.
-    let mailbox = Mailbox::default();
+    let mailbox = Mailbox::floating();
     mailbox.set_floating();
 
     let action = hello::Action::Greet {
@@ -31,7 +31,7 @@ fn main() -> Result<(), Error> {
         action,
         result_sender: mailbox.sender(),
     };
-    service.send(message)?;
+    service.send(&mut world, message)?;
 
     let action = hello::Action::Greet {
         name: "Actors".to_string(),
@@ -41,7 +41,7 @@ fn main() -> Result<(), Error> {
         action,
         result_sender: mailbox.sender(),
     };
-    service.send(message)?;
+    service.send(&mut world, message)?;
 
     // Stop the actor
     let message = hello::Request {
@@ -49,7 +49,7 @@ fn main() -> Result<(), Error> {
         action: hello::Action::Stop,
         result_sender: mailbox.sender(),
     };
-    service.send(message)?;
+    service.send(&mut world, message)?;
 
     // Process messages
     world.process()?;
@@ -66,7 +66,7 @@ fn main() -> Result<(), Error> {
 mod hello_service {
     use anyhow::Error;
     use stewart::{
-        message::{Mailbox, Sender},
+        message::{Mailbox, Sender, Signal},
         Actor, Metadata, World,
     };
     use tracing::{event, instrument, Level};
@@ -113,8 +113,14 @@ mod hello_service {
     pub fn start(world: &mut World, name: String) -> Result<Sender<protocol::Request>, Error> {
         event!(Level::INFO, "starting");
 
-        let (actor, sender) = Service::new(name);
-        world.insert("hello", actor)?;
+        let signal = Signal::default();
+        let (actor, signal) = Service::new(signal, name);
+        let sender = actor.mailbox.sender();
+
+        let id = world.insert("hello", actor);
+
+        // To wake up our actor when a message gets sent, register its id in the signal
+        signal.set_id(id);
 
         Ok(sender)
     }
@@ -128,29 +134,19 @@ mod hello_service {
     }
 
     impl Service {
-        fn new(name: String) -> (Self, Sender<protocol::Request>) {
+        fn new(signal: Signal, name: String) -> (Self, Signal) {
             // Mailboxes let you send message around
-            let mailbox = Mailbox::default();
-            let sender = mailbox.sender();
+            let mailbox = Mailbox::new(signal.clone());
 
             // Create the actor in the world
-            let actor = Service { name, mailbox };
+            let this = Service { name, mailbox };
 
-            (actor, sender)
+            (this, signal)
         }
     }
 
     impl Actor for Service {
-        fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-            // To wake up our actor when a message gets sent, register it with the mailbox for
-            // notification
-            let signal = world.signal(meta.id());
-            self.mailbox.set_signal(signal);
-
-            Ok(())
-        }
-
-        fn process(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
             event!(Level::INFO, "processing messages");
 
             // Process messages on the mailbox
@@ -165,7 +161,7 @@ mod hello_service {
                 }
 
                 // Reply back to the sender
-                request.result_sender.send(request.id)?;
+                request.result_sender.send(world, request.id)?;
             }
 
             Ok(())

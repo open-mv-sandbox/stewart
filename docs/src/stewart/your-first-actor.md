@@ -22,13 +22,13 @@ When your actor is woken up, its `process` callback is called.
 
 Your actor processing doesn't necessarily mean there are messages available to be processed.
 The only guarantee is that after a "signal" is sent to your actor, your actor will be processed when
-the `World` gets to it.
+the world gets to it.
 If the entire system doesn't get dropped before that, of course.
 
-## Adding an actor to a `World`
+## Adding an actor to a world
 
 Creating an instance of your actor works the same as any other Rust type.
-A stewart `World` is simply a collection of actor instances.
+A stewart world is simply a collection of actor instances.
 
 To keep your concrete actor type private, you can create a function to start a new instance of your
 actor.
@@ -52,10 +52,10 @@ The `message` module that implements `Sender` internally uses `Signal`.
 You can send a `Signal` from anywhere on the same thread, it does not have to happen during actor
 processing.
 
-## Creating and processing a `World`
+## Creating and processing a world
 
-To put it all together, you need to have a `World` to add your actor to.
-After signalling your actor, it will then be processed when calling `process` on the `World`.
+To put it all together, you need to have a world to add your actor to.
+After signalling your actor, it will then be processed when calling `process` on the world.
 
 ```rust
 fn main() -> Result<(), Error> {
@@ -75,6 +75,6 @@ This is the most basic, and perfectly functional, way to create an actor runtime
 If all your actors block internally and never have to wait on external data this works perfectly
 fine as `process` will keep running until no actors are waiting for processing.
 
-If you do however have things your `World` may need to wait on while not processing an actor, you
+If you do however have things your world may need to wait on while not processing an actor, you
 can implement this here.
-For example, `stewart-mio` implements a `World` processing loop based on a mio event loop.
+For example, `stewart-mio` implements a world processing loop based on a mio event loop.

@@ -1,7 +1,10 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{message::Mailbox, Actor, Metadata, World};
+use stewart::{
+    message::{Mailbox, Signal},
+    Actor, Metadata, World,
+};
 use stewart_http::{HttpEvent, RequestAction};
 use stewart_mio::{Registry, RegistryRef};
 use tracing::{event, Level};
@@ -13,8 +16,10 @@ fn main() -> Result<(), Error> {
     let registry = Registry::new()?;
 
     // Start the actor
-    let actor = Service::new(&mut world, registry.handle())?;
-    world.insert("html-hello", actor)?;
+    let signal = Signal::default();
+    let actor = Service::new(&mut world, signal.clone(), registry.handle())?;
+    let id = world.insert("html-hello", actor);
+    signal.set_id(id);
 
     // Run the event loop
     stewart_mio::run_event_loop(&mut world, &registry)?;
@@ -27,26 +32,19 @@ struct Service {
 }
 
 impl Service {
-    pub fn new(world: &mut World, registry: RegistryRef) -> Result<Self, Error> {
-        let http_events = Mailbox::default();
+    pub fn new(world: &mut World, signal: Signal, registry: RegistryRef) -> Result<Self, Error> {
+        let http_events = Mailbox::new(signal);
 
         let addr = "127.0.0.1:1234".parse()?;
         stewart_http::bind(world, registry, addr, http_events.sender())?;
 
-        let actor = Service { http_events };
-        Ok(actor)
+        let this = Service { http_events };
+        Ok(this)
     }
 }
 
 impl Actor for Service {
-    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        let signal = world.signal(meta.id());
-        self.http_events.set_signal(signal);
-
-        Ok(())
-    }
-
-    fn process(&mut self, _world: &mut World, _meta: &mut Metadata) -> Result<(), Error> {
+    fn process(&mut self, world: &mut World, _meta: &mut Metadata) -> Result<(), Error> {
         while let Some(event) = self.http_events.recv() {
             let HttpEvent::Request(request) = event;
 
@@ -54,7 +52,9 @@ impl Actor for Service {
             println!("HEADER: {:?}", request.header);
 
             let body = RESPONSE.into();
-            request.actions.send(RequestAction::SendResponse(body))?;
+            request
+                .actions
+                .send(world, RequestAction::SendResponse(body))?;
         }
 
         Ok(())

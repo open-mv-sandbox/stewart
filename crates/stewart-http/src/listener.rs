@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use anyhow::Error;
 use stewart::{
-    message::{Mailbox, Sender},
+    message::{Mailbox, Sender, Signal},
     Actor, Metadata, World,
 };
 use stewart_mio::{net::tcp, RegistryRef};
@@ -17,18 +17,22 @@ pub fn bind(
     addr: SocketAddr,
     http_events: Sender<HttpEvent>,
 ) -> Result<(), Error> {
-    let actor = Service::new(world, registry, addr, http_events)?;
-    world.insert("http-listener", actor)?;
+    let (actor, signal) = Service::new(world, registry, addr, http_events)?;
+
+    let id = world.insert("http-listener", actor);
+    signal.set_id(id);
 
     Ok(())
 }
 
 struct Service {
+    signal: Signal,
     tcp_events: Mailbox<tcp::ListenerEvent>,
     tcp_actions: Sender<tcp::ListenerAction>,
     http_events: Sender<HttpEvent>,
 
     connections: Vec<StreamEntry>,
+    closed: bool,
 }
 
 struct StreamEntry {
@@ -43,57 +47,35 @@ impl Service {
         registry: RegistryRef,
         addr: SocketAddr,
         http_events: Sender<HttpEvent>,
-    ) -> Result<Self, Error> {
+    ) -> Result<(Self, Signal), Error> {
+        let signal = Signal::default();
+
         // Start the listen port
-        let tcp_events = Mailbox::default();
+        let tcp_events = Mailbox::new(signal.clone());
         let (tcp_actions, server_info) = tcp::bind(world, registry, addr, tcp_events.sender())?;
 
         event!(Level::DEBUG, addr = ?server_info.local_addr, "listening");
 
-        let actor = Service {
+        let this = Service {
+            signal: signal.clone(),
             tcp_events,
             tcp_actions,
             http_events,
 
             connections: Vec::new(),
+            closed: false,
         };
-        Ok(actor)
-    }
-}
-
-impl Drop for Service {
-    fn drop(&mut self) {
-        event!(Level::DEBUG, "closing");
-
-        let _ = self.tcp_actions.send(tcp::ListenerAction::Close);
-
-        // Close all not yet closed streams
-        for stream in &self.connections {
-            if stream.closed {
-                continue;
-            }
-
-            let _ = stream.actions.send(connection::ConnectionAction::Close);
-        }
+        Ok((this, signal))
     }
 }
 
 impl Actor for Service {
-    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        let signal = world.signal(meta.id());
-        self.tcp_events.set_signal(signal);
-
-        Ok(())
-    }
-
     fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         // Handle incoming TCP connections
         while let Some(event) = self.tcp_events.recv() {
             match event {
                 tcp::ListenerEvent::Connected(event) => {
-                    let events = Mailbox::default();
-                    let signal = world.signal(meta.id());
-                    events.set_signal(signal);
+                    let events = Mailbox::new(self.signal.clone());
 
                     let actions = connection::open(
                         world,
@@ -111,7 +93,7 @@ impl Actor for Service {
                     };
                     self.connections.push(connection);
                 }
-                tcp::ListenerEvent::Closed => meta.set_stop(),
+                tcp::ListenerEvent::Closed => self.closed = true,
             }
         }
 
@@ -127,6 +109,24 @@ impl Actor for Service {
             }
         }
         self.connections.retain(|s| !s.closed);
+
+        if self.closed {
+            event!(Level::DEBUG, "stopping");
+
+            let _ = self.tcp_actions.send(world, tcp::ListenerAction::Close);
+
+            // Close all not yet closed streams
+            for stream in &self.connections {
+                if stream.closed {
+                    continue;
+                }
+
+                let _ = stream
+                    .actions
+                    .send(world, connection::ConnectionAction::Close);
+            }
+            meta.set_stop();
+        }
 
         Ok(())
     }

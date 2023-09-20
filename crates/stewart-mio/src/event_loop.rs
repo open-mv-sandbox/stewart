@@ -26,17 +26,17 @@ fn run_poll_loop(world: &mut World, registry: &Registry) -> Result<(), Error> {
 
         // Send out ready events
         for event in events.iter() {
-            handle(registry, event)?;
+            handle(world, registry, event)?;
         }
 
         // Process all pending actor messages
         // This will likely start with the ready messages
-        event!(Level::TRACE, "processing poll step messages");
+        //event!(Level::TRACE, "processing poll step messages"); almost never useful, very spammy
         world.process()?;
     }
 }
 
-fn handle(registry: &Registry, event: &Event) -> Result<(), Error> {
+fn handle(world: &mut World, registry: &Registry, event: &Event) -> Result<(), Error> {
     event!(Level::TRACE, "handling mio event");
 
     let ready = ReadyState {
@@ -50,7 +50,7 @@ fn handle(registry: &Registry, event: &Event) -> Result<(), Error> {
     }
 
     // Send out the message
-    registry.update_state(event.token(), ready)?;
+    registry.update_state(world, event.token(), ready)?;
 
     Ok(())
 }

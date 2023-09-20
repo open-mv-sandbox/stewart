@@ -7,7 +7,7 @@ use bytes::BytesMut;
 use quinn_proto::{DatagramEvent, Endpoint, EndpointConfig, ServerConfig};
 use rustls::{Certificate, PrivateKey};
 use stewart::{
-    message::{Mailbox, Sender},
+    message::{Mailbox, Sender, Signal},
     Actor, Metadata, World,
 };
 use stewart_mio::{net::udp, RegistryRef};
@@ -20,8 +20,10 @@ pub fn endpoint(
     certificate: Certificate,
     private_key: PrivateKey,
 ) -> Result<(), Error> {
-    let actor = Service::new(world, registry, addr, certificate, private_key)?;
-    world.insert("quic-endpoint", actor)?;
+    let (actor, signal) = Service::new(world, registry, addr, certificate, private_key)?;
+
+    let id = world.insert("quic-endpoint", actor);
+    signal.set_id(id);
 
     Ok(())
 }
@@ -40,7 +42,7 @@ impl Service {
         addr: SocketAddr,
         certificate: Certificate,
         private_key: PrivateKey,
-    ) -> Result<Self, Error> {
+    ) -> Result<(Self, Signal), Error> {
         // TODO: This is currently always a server, make sure it can be a client
         event!(Level::DEBUG, ?addr, "starting endpoint");
 
@@ -57,26 +59,20 @@ impl Service {
         let endpoint = Endpoint::new(Arc::new(config), Some(Arc::new(server_config)), false);
 
         // Bind the UDP socket to listen on
-        let event_mailbox = Mailbox::default();
+        let signal = Signal::default();
+        let event_mailbox = Mailbox::new(signal.clone());
         let (action_sender, _) = udp::bind(world, registry, addr, event_mailbox.sender())?;
 
-        let value = Service {
+        let this = Service {
             endpoint,
             event_mailbox,
             action_sender,
         };
-        Ok(value)
+        Ok((this, signal))
     }
 }
 
 impl Actor for Service {
-    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        let signal = world.signal(meta.id());
-        self.event_mailbox.set_signal(signal);
-
-        Ok(())
-    }
-
     fn process(&mut self, _world: &mut World, _meta: &mut Metadata) -> Result<(), Error> {
         while let Some(packet) = self.event_mailbox.recv() {
             event!(Level::TRACE, "received packet");

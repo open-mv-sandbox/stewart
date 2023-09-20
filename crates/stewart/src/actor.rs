@@ -2,7 +2,7 @@ use anyhow::Error;
 
 use crate::{Id, World};
 
-/// Actor identity and implementation trait.
+/// Actor identity and processing implementation trait.
 ///
 /// Implementations can return `Err` to signal a fatal error to the system.
 /// If this happens, the actor will be stopped and cleaned up appropriately to protect against
@@ -11,19 +11,11 @@ use crate::{Id, World};
 /// You should *always* prefer this over panicking, as this crashes the entire runtime.
 /// Instead of using `unwrap` or `expect`, use `context` from the `anyhow` crate.
 pub trait Actor: 'static {
-    /// Called when an actor is inserted into a `World`.
-    ///
-    /// This is useful to receive the `Signal` for this actor.
-    #[allow(unused_variables)]
-    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        Ok(())
-    }
-
-    /// Perform a processing step, after being signalled.
+    /// Processing step implementation.
     fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error>;
 }
 
-/// Metadata of an `Actor` in a `World`.
+/// Metadata of an `Actor` in a world.
 pub struct Metadata {
     id: Id,
     stop: bool,

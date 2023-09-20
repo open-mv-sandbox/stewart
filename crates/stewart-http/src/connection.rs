@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use anyhow::Error;
 use bytes::{BufMut, Bytes, BytesMut};
 use stewart::{
-    message::{Mailbox, Sender},
+    message::{Mailbox, Sender, Signal},
     Actor, Metadata, World,
 };
 use stewart_mio::net::tcp;
@@ -30,21 +30,25 @@ pub fn open(
     events: Sender<ConnectionEvent>,
     http_events: Sender<HttpEvent>,
 ) -> Result<Sender<ConnectionAction>, Error> {
-    let actor = Service::new(tcp_events, tcp_actions, events, http_events);
+    let signal = Signal::default();
+    let actor = Service::new(signal.clone(), tcp_events, tcp_actions, events, http_events);
     let actions = actor.actions.sender();
-    world.insert("http-connection", actor)?;
+
+    let id = world.insert("http-connection", actor);
+    signal.set_id(id);
 
     Ok(actions)
 }
 
 struct Service {
+    signal: Signal,
     actions: Mailbox<ConnectionAction>,
     events: Sender<ConnectionEvent>,
     tcp_events: Mailbox<tcp::ConnectionEvent>,
     tcp_actions: Sender<tcp::ConnectionAction>,
     http_events: Sender<HttpEvent>,
 
-    tcp_closed: bool,
+    closed: bool,
     parser: HttpParser,
     requests: VecDeque<RequestState>,
 }
@@ -56,6 +60,7 @@ enum RequestState {
 
 impl Service {
     pub fn new(
+        signal: Signal,
         tcp_events: Mailbox<tcp::ConnectionEvent>,
         tcp_actions: Sender<tcp::ConnectionAction>,
         events: Sender<ConnectionEvent>,
@@ -63,58 +68,48 @@ impl Service {
     ) -> Self {
         event!(Level::DEBUG, "connection opened");
 
-        Self {
-            actions: Mailbox::default(),
+        let actions = Mailbox::new(signal.clone());
+
+        let this = Self {
+            signal,
+            actions,
             events,
             tcp_events,
             tcp_actions,
             http_events,
 
-            tcp_closed: false,
+            closed: false,
             parser: HttpParser::default(),
             requests: VecDeque::new(),
-        }
-    }
-}
-
-impl Drop for Service {
-    fn drop(&mut self) {
-        event!(Level::DEBUG, "closing");
-
-        let _ = self.events.send(ConnectionEvent::Closed);
-        if !self.tcp_closed {
-            let _ = self.tcp_actions.send(tcp::ConnectionAction::Close);
-        }
+        };
+        this
     }
 }
 
 impl Actor for Service {
-    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        let signal = world.signal(meta.id());
-
-        self.tcp_events.set_signal(signal.clone());
-        self.actions.set_signal(signal);
-
-        Ok(())
-    }
-
     fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        self.process_tcp(meta)?;
+        self.process_tcp()?;
 
         // Can't do anything further if we don't have an open TCP connection
-        if self.tcp_closed {
+        if self.closed {
+            event!(Level::DEBUG, "stopping");
+
+            let _ = self.events.send(world, ConnectionEvent::Closed);
+            let _ = self.tcp_actions.send(world, tcp::ConnectionAction::Close);
+
+            meta.set_stop();
             return Ok(());
         }
 
-        self.process_actions()?;
-        self.process_requests(world, meta)?;
+        self.process_actions(world)?;
+        self.process_requests(world)?;
 
         Ok(())
     }
 }
 
 impl Service {
-    fn process_tcp(&mut self, meta: &mut Metadata) -> Result<(), Error> {
+    fn process_tcp(&mut self) -> Result<(), Error> {
         while let Some(event) = self.tcp_events.recv() {
             match event {
                 tcp::ConnectionEvent::Recv(event) => {
@@ -122,9 +117,7 @@ impl Service {
                 }
                 tcp::ConnectionEvent::Closed => {
                     event!(Level::DEBUG, "connection closed");
-
-                    self.tcp_closed = true;
-                    meta.set_stop();
+                    self.closed = true;
                 }
             }
         }
@@ -133,6 +126,7 @@ impl Service {
     }
 
     fn handle_recv(&mut self, mut event: tcp::RecvEvent) {
+        println!("RECEIVING {:?}", event.data);
         event!(Level::TRACE, bytes = event.data.len(), "received data");
 
         // Consume data into the parser
@@ -151,11 +145,11 @@ impl Service {
         }
     }
 
-    fn process_actions(&mut self) -> Result<(), Error> {
+    fn process_actions(&mut self, world: &mut World) -> Result<(), Error> {
         while let Some(action) = self.actions.recv() {
             match action {
                 ConnectionAction::Close => {
-                    self.tcp_actions.send(tcp::ConnectionAction::Close)?;
+                    self.tcp_actions.send(world, tcp::ConnectionAction::Close)?;
                 }
             }
         }
@@ -163,22 +157,20 @@ impl Service {
         Ok(())
     }
 
-    fn process_requests(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+    fn process_requests(&mut self, world: &mut World) -> Result<(), Error> {
         // Check new requests we have to send out
         for request in &mut self.requests {
             let RequestState::New { header } = request else { continue };
 
             // Create the mailbox to send a response back through
-            let actions = Mailbox::default();
-            let signal = world.signal(meta.id());
-            actions.set_signal(signal);
+            let actions = Mailbox::new(self.signal.clone());
 
             // Send the request event
             let event = RequestEvent {
                 header: header.clone(),
                 actions: actions.sender(),
             };
-            self.http_events.send(HttpEvent::Request(event))?;
+            self.http_events.send(world, HttpEvent::Request(event))?;
 
             // Continue tracking the request
             *request = RequestState::Pending { actions };
@@ -191,7 +183,7 @@ impl Service {
             let Some(action) = actions.recv() else { break };
             let RequestAction::SendResponse(body) = action;
 
-            self.send_response(body)?;
+            self.send_response(world, body)?;
 
             // Remove this resolved request
             self.requests.pop_front();
@@ -200,7 +192,7 @@ impl Service {
         Ok(())
     }
 
-    fn send_response(&mut self, body: Bytes) -> Result<(), Error> {
+    fn send_response(&mut self, world: &mut World, body: Bytes) -> Result<(), Error> {
         // Send the response
         let mut data = BytesMut::new();
 
@@ -214,7 +206,8 @@ impl Service {
         let action = tcp::SendAction {
             data: data.freeze(),
         };
-        self.tcp_actions.send(tcp::ConnectionAction::Send(action))?;
+        self.tcp_actions
+            .send(world, tcp::ConnectionAction::Send(action))?;
 
         Ok(())
     }

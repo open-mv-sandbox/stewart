@@ -4,9 +4,9 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context as _, Error};
+use anyhow::{Context, Error};
 use mio::{event::Source, Events, Interest, Poll, Token};
-use stewart::Signal;
+use stewart::{message::Signal, World};
 use thunderdome::{Arena, Index};
 use tracing::{event, Level};
 
@@ -46,7 +46,12 @@ impl Registry {
         Ok(())
     }
 
-    pub(crate) fn update_state(&self, token: Token, ready: ReadyState) -> Result<(), Error> {
+    pub(crate) fn update_state(
+        &self,
+        world: &mut World,
+        token: Token,
+        ready: ReadyState,
+    ) -> Result<(), Error> {
         let mut shared = self.shared.borrow_mut();
 
         let index = Index::from_bits(token.0 as u64).context("invalid token")?;
@@ -55,11 +60,7 @@ impl Registry {
             .get_mut(index)
             .context("failed to get token entry")?;
 
-        let signal = entry
-            .signal
-            .as_ref()
-            .context("readyness received for token, but no signal set")?;
-        signal.send()?;
+        entry.signal.send(world)?;
 
         // Just in case, unhandled read/write events should be combined together if they have not
         // yet been handled. Mio doesn't garantuee that we'll get another event, and actors should
@@ -83,7 +84,12 @@ impl RegistryRef {
     /// Add a source to the registry, registering it with mio.
     ///
     /// You **must** manually deregister too, see mio docs for more information.
-    pub fn register<S>(&self, source: &mut S, interest: Interest) -> Result<ReadyRef, Error>
+    pub fn register<S>(
+        &self,
+        source: &mut S,
+        interest: Interest,
+        signal: Signal,
+    ) -> Result<ReadyRef, Error>
     where
         S: Source,
     {
@@ -95,10 +101,7 @@ impl RegistryRef {
             readable: false,
             writable: false,
         };
-        let entry = TokenEntry {
-            signal: None,
-            state,
-        };
+        let entry = TokenEntry { signal, state };
         let index = shared.tokens.insert(entry);
 
         // Register with the generated token
@@ -114,6 +117,7 @@ impl RegistryRef {
 }
 
 /// Reference to a tracked ready state.
+#[derive(Clone)]
 pub struct ReadyRef {
     shared: Weak<RefCell<RegistryShared>>,
     index: Index,
@@ -154,19 +158,6 @@ impl ReadyRef {
         }
     }
 
-    pub fn set_signal(&self, signal: Signal) -> Result<(), Error> {
-        let shared = try_shared(&self.shared)?;
-        let mut shared = shared.borrow_mut();
-
-        let entry = shared
-            .tokens
-            .get_mut(self.index)
-            .context("failed to get token entry")?;
-        entry.signal = Some(signal);
-
-        Ok(())
-    }
-
     /// Get the ready state, and reset it for future events.
     pub fn take(&self) -> Result<ReadyState, Error> {
         let shared = try_shared(&self.shared)?;
@@ -192,8 +183,8 @@ struct RegistryShared {
     tokens: Arena<TokenEntry>,
 }
 
-pub struct TokenEntry {
-    signal: Option<Signal>,
+struct TokenEntry {
+    signal: Signal,
     state: ReadyState,
 }
 

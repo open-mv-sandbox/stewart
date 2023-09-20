@@ -7,11 +7,9 @@
 
 mod actor;
 pub mod message;
-mod signal;
 mod world;
 
 pub use self::{
     actor::{Actor, Metadata},
-    signal::Signal,
     world::{Id, ProcessError, World},
 };

@@ -7,7 +7,7 @@ use anyhow::Error;
 use bytes::{Buf, Bytes, BytesMut};
 use mio::Interest;
 use stewart::{
-    message::{Mailbox, Sender},
+    message::{Mailbox, Sender, Signal},
     Actor, Metadata, World,
 };
 use tracing::{event, Level};
@@ -42,9 +42,12 @@ pub(crate) fn open(
     stream: mio::net::TcpStream,
     event_sender: Sender<ConnectionEvent>,
 ) -> Result<Sender<ConnectionAction>, Error> {
-    let actor = Service::new(registry, stream, event_sender)?;
+    let signal = Signal::default();
+    let actor = Service::new(signal.clone(), registry, stream, event_sender)?;
     let actions = actor.actions.sender();
-    world.insert("tcp-stream", actor)?;
+
+    let id = world.insert("tcp-stream", actor);
+    signal.set_id(id);
 
     Ok(actions)
 }
@@ -55,6 +58,7 @@ struct Service {
 
     stream: mio::net::TcpStream,
     ready: ReadyRef,
+    closed: bool,
 
     queue: VecDeque<Bytes>,
     buffer: BytesMut,
@@ -62,54 +66,48 @@ struct Service {
 
 impl Service {
     fn new(
+        signal: Signal,
         registry: RegistryRef,
         mut stream: mio::net::TcpStream,
         events: Sender<ConnectionEvent>,
     ) -> Result<Self, Error> {
         event!(Level::DEBUG, "opening stream");
 
-        let actions = Mailbox::default();
+        let actions = Mailbox::new(signal.clone());
 
         // Register for mio events
-        let ready = registry.register(&mut stream, Interest::READABLE)?;
+        let ready = registry.register(&mut stream, Interest::READABLE, signal)?;
 
-        let value = Service {
+        let this = Service {
             actions,
             events,
 
             stream,
             ready,
+            closed: false,
 
             queue: VecDeque::new(),
             buffer: BytesMut::new(),
         };
-        Ok(value)
+        Ok(this)
     }
 }
 
 impl Drop for Service {
     fn drop(&mut self) {
-        event!(Level::DEBUG, "closing");
-
-        let _ = self.events.send(ConnectionEvent::Closed);
-
         self.ready.deregister(&mut self.stream);
     }
 }
 
 impl Actor for Service {
-    fn register(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        let signal = world.signal(meta.id());
-
-        self.actions.set_signal(signal.clone());
-        self.ready.set_signal(signal)?;
-
-        Ok(())
-    }
-
-    fn process(&mut self, _world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+    fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
         self.poll_actions(meta)?;
-        self.poll_ready(meta)?;
+        self.poll_ready(world)?;
+
+        if self.closed {
+            event!(Level::DEBUG, "stopping");
+            let _ = self.events.send(world, ConnectionEvent::Closed);
+        }
 
         Ok(())
     }
@@ -128,11 +126,11 @@ impl Service {
         Ok(())
     }
 
-    fn poll_ready(&mut self, meta: &mut Metadata) -> Result<(), Error> {
+    fn poll_ready(&mut self, world: &mut World) -> Result<(), Error> {
         let state = self.ready.take()?;
 
         if state.readable {
-            self.on_ready_readable(meta)?;
+            self.on_ready_readable(world)?;
         }
 
         if state.writable {
@@ -142,7 +140,7 @@ impl Service {
         Ok(())
     }
 
-    fn on_ready_readable(&mut self, meta: &mut Metadata) -> Result<(), Error> {
+    fn on_ready_readable(&mut self, world: &mut World) -> Result<(), Error> {
         // Make sure we have at least a minimum amount of buffer space left
         if self.buffer.len() < 1024 {
             self.buffer.resize(2048, 0);
@@ -182,12 +180,12 @@ impl Service {
             event!(Level::TRACE, count = bytes_read, "received incoming");
             let data = self.buffer.split_to(bytes_read).freeze();
             let event = RecvEvent { data };
-            self.events.send(ConnectionEvent::Recv(event))?;
+            self.events.send(world, ConnectionEvent::Recv(event))?;
         }
 
-        // If the stream got closed, stop the actor
+        // If the stream got closed, remember
         if closed {
-            meta.set_stop();
+            self.closed = true;
         }
 
         Ok(())
