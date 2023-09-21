@@ -73,7 +73,7 @@ impl Service {
 
         let actions = Mailbox::new(signal.clone());
 
-        let this = Self {
+        Self {
             signal,
             actions,
             events,
@@ -84,8 +84,7 @@ impl Service {
             closed: false,
             parser: HttpParser::default(),
             requests: VecDeque::new(),
-        };
-        this
+        }
     }
 }
 
@@ -164,7 +163,9 @@ impl Service {
     fn process_requests(&mut self, world: &mut Runtime) -> Result<(), Error> {
         // Check new requests we have to send out
         for request in &mut self.requests {
-            let RequestState::New { header } = request else { continue; };
+            let RequestState::New { header } = request else {
+                continue;
+            };
 
             // Create the mailbox to send a response back through
             let actions = Mailbox::new(self.signal.clone());
@@ -184,7 +185,9 @@ impl Service {
         // HTTP 1.1 sends back responses in the same order as requests, so we only check the first
         while let Some(RequestState::Pending { actions }) = self.requests.front() {
             // Check if we got a response to send
-            let Some(action) = actions.recv() else { break; };
+            let Some(action) = actions.recv() else {
+                break;
+            };
             let RequestAction::SendResponse(body) = action;
 
             self.send_response(world, body)?;

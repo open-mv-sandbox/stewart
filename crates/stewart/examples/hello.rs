@@ -1,5 +1,3 @@
-mod utils;
-
 use anyhow::Error;
 use stewart::{message::Mailbox, Runtime};
 use tracing::{event, Level};
@@ -9,7 +7,7 @@ use uuid::Uuid;
 use crate::hello_service::protocol as hello;
 
 fn main() -> Result<(), Error> {
-    utils::init_logging();
+    devutils::init_logging();
 
     let mut world = Runtime::default();
 
@@ -64,8 +62,8 @@ fn main() -> Result<(), Error> {
 
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
-    use std::ops::ControlFlow;
     use anyhow::Error;
+    use std::ops::ControlFlow;
     use stewart::{
         message::{Mailbox, Sender, Signal},
         Actor, Runtime,
@@ -82,7 +80,7 @@ mod hello_service {
         /// It's good practice to wrap your service's actions in a `Request` type, for adding
         /// additional message metadata.
         pub struct Request {
-            /// It's generally a good idea to add an ID to your messages, so it can be tracked at
+            /// It's can be a good idea to add an ID to your messages, so it can be tracked at
             /// various stages of the process, and when sent over the network.
             /// This ID should be globally unique, such as by using UUIDs.
             pub id: Uuid,

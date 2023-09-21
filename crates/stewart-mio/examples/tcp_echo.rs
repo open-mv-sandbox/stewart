@@ -1,8 +1,6 @@
-mod utils;
-
-use std::ops::ControlFlow;
 use anyhow::Error;
 use bytes::Bytes;
+use std::ops::ControlFlow;
 use stewart::{
     message::{Mailbox, Sender, Signal},
     Actor, Runtime,
@@ -14,7 +12,7 @@ use stewart_mio::{
 use tracing::{event, Level};
 
 fn main() -> Result<(), Error> {
-    utils::init_logging();
+    devutils::init_logging();
 
     let mut world = Runtime::default();
     let registry = Registry::new()?;
@@ -82,7 +80,8 @@ impl Service {
                     let action = tcp::SendAction { data };
                     event
                         .actions
-                        .send(world, tcp::StreamAction::Send(action)).unwrap();
+                        .send(world, tcp::StreamAction::Send(action))
+                        .unwrap();
 
                     // Keep track of the stream
                     event.events.set_signal(self.signal.clone());

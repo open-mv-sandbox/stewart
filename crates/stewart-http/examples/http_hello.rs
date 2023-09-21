@@ -1,7 +1,5 @@
-mod utils;
-
-use std::ops::ControlFlow;
 use anyhow::Error;
+use std::ops::ControlFlow;
 use stewart::{
     message::{Mailbox, Signal},
     Actor, Runtime,
@@ -11,7 +9,7 @@ use stewart_mio::{Registry, RegistryRef};
 use tracing::{event, Level};
 
 fn main() -> Result<(), Error> {
-    utils::init_logging();
+    devutils::init_logging();
 
     let mut world = Runtime::default();
     let registry = Registry::new()?;
@@ -55,7 +53,8 @@ impl Actor for Service {
             let body = RESPONSE.into();
             request
                 .actions
-                .send(world, RequestAction::SendResponse(body)).unwrap();
+                .send(world, RequestAction::SendResponse(body))
+                .unwrap();
         }
 
         ControlFlow::Continue(())

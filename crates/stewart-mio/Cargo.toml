@@ -16,4 +16,4 @@ tracing.workspace = true
 stewart.workspace = true
 
 [dev-dependencies]
-tracing-subscriber.workspace = true
+devutils.workspace = true

@@ -1,5 +1,3 @@
-mod utils;
-
 use std::fs;
 
 use anyhow::{Context, Error};
@@ -9,7 +7,7 @@ use stewart_mio::Registry;
 use tracing::{event, Level};
 
 fn main() -> Result<(), Error> {
-    utils::init_logging();
+    devutils::init_logging();
 
     let mut world = Runtime::default();
     let registry = Registry::new()?;
@@ -39,8 +37,8 @@ fn generate_certificate() -> Result<(Certificate, PrivateKey), Error> {
     let cert = cert.serialize_der().unwrap();
 
     // Dump key where the client can find it
-    fs::write("./target/example-cert", &cert).context("failed to dump cert")?;
-    fs::write("./target/example-key", &key).context("failed to dump key")?;
+    fs::write("../../../target/example-cert", &cert).context("failed to dump cert")?;
+    fs::write("../../../target/example-key", &key).context("failed to dump key")?;
 
     let certificate = rustls::Certificate(cert);
     let private_key = rustls::PrivateKey(key);

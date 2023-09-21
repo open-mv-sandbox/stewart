@@ -1,0 +1,8 @@
+[package]
+name = "devutils"
+version = "0.0.0-dev"
+edition = "2021"
+
+[dependencies]
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }

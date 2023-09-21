@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*", "examples"]
+members = ["crates/*"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -14,6 +14,7 @@ thunderdome = "0.6.0"
 tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
 uuid = "1.4"
+devutils = { version = "0.0.0-dev", path = "./crates/devutils" }
 stewart = { version = "0.10.0-dev", path = "./crates/stewart" }
 stewart-http = { version = "0.1.0-dev", path = "./crates/stewart-http" }
 stewart-mio = { version = "0.1.0-dev", path = "./crates/stewart-mio" }

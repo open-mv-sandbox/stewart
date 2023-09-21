@@ -1,5 +1,3 @@
-mod utils;
-
 use std::net::SocketAddr;
 use std::ops::ControlFlow;
 
@@ -12,7 +10,7 @@ use stewart_mio::{net::udp, Registry, RegistryRef};
 use tracing::{event, Level};
 
 fn main() -> Result<(), Error> {
-    utils::init_logging();
+    devutils::init_logging();
 
     let mut world = Runtime::default();
     let registry = Registry::new()?;

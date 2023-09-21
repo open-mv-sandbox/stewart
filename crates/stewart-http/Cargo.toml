@@ -13,3 +13,6 @@ bytes.workspace = true
 tracing.workspace = true
 stewart.workspace = true
 stewart-mio.workspace = true
+
+[dev-dependencies]
+devutils.workspace = true

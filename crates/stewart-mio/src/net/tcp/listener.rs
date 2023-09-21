@@ -107,6 +107,7 @@ impl Actor for Service {
             self.on_listener_ready(world).unwrap();
         }
 
+        #[allow(clippy::never_loop)]
         while let Some(_action) = self.actions.recv() {
             event!(Level::DEBUG, "stopping");
             self.events.send(world, ListenerEvent::Closed).unwrap();
