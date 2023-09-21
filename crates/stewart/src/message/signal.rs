@@ -4,7 +4,7 @@ use anyhow::{anyhow, Context, Error};
 use thiserror::Error;
 use tracing::instrument;
 
-use crate::{Id, World};
+use crate::{Id, Runtime};
 
 /// Shared rebindable handle to for sending a wakeup signal.
 ///
@@ -27,7 +27,7 @@ impl Signal {
 
     /// Send the signal.
     #[instrument("Signal::send", level = "debug", skip_all)]
-    pub fn send(&self, world: &mut World) -> Result<(), SendError> {
+    pub fn send(&self, world: &mut Runtime) -> Result<(), SendError> {
         let Some(id) = self.shared.get() else {
             return Err(anyhow!("no id set").into());
         };

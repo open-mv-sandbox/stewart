@@ -1,11 +1,12 @@
 use std::{collections::VecDeque, net::SocketAddr, time::Instant};
+use std::ops::ControlFlow;
 
 use anyhow::Error;
 use bytes::{Bytes, BytesMut};
 use mio::Interest;
 use stewart::{
     message::{Mailbox, Sender, Signal},
-    Actor, Metadata, World,
+    Actor, Runtime,
 };
 use tracing::{event, instrument, Level};
 
@@ -35,7 +36,7 @@ pub struct SocketInfo {
 
 #[instrument("udp::bind", skip_all)]
 pub fn bind(
-    world: &mut World,
+    world: &mut Runtime,
     registry: RegistryRef,
     addr: SocketAddr,
     event_sender: Sender<RecvEvent>,
@@ -101,24 +102,24 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        self.poll_actions(meta)?;
-        self.poll_ready(world)?;
+    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
+        self.poll_actions()?;
+        self.poll_ready(world).unwrap();
 
-        Ok(())
+        ControlFlow::Continue(())
     }
 }
 
 impl Service {
-    fn poll_actions(&mut self, meta: &mut Metadata) -> Result<(), Error> {
+    fn poll_actions(&mut self) -> ControlFlow<()> {
         while let Some(message) = self.actions.recv() {
             match message {
-                Action::Send(packet) => self.on_action_send(packet)?,
-                Action::Close => meta.set_stop(),
+                Action::Send(packet) => self.on_action_send(packet).unwrap(),
+                Action::Close => return ControlFlow::Break(()),
             }
         }
 
-        Ok(())
+        ControlFlow::Continue(())
     }
 
     fn on_action_send(&mut self, packet: SendAction) -> Result<(), Error> {
@@ -137,7 +138,7 @@ impl Service {
         Ok(())
     }
 
-    fn poll_ready(&mut self, world: &mut World) -> Result<(), Error> {
+    fn poll_ready(&mut self, world: &mut Runtime) -> Result<(), Error> {
         let state = self.ready.take()?;
 
         // Handle current state if the socket is ready
@@ -151,7 +152,7 @@ impl Service {
         Ok(())
     }
 
-    fn poll_read(&mut self, world: &mut World) -> Result<(), Error> {
+    fn poll_read(&mut self, world: &mut Runtime) -> Result<(), Error> {
         event!(Level::TRACE, "polling read");
 
         while self.try_recv(world)? {}
@@ -159,14 +160,14 @@ impl Service {
         Ok(())
     }
 
-    fn try_recv(&mut self, world: &mut World) -> Result<bool, Error> {
+    fn try_recv(&mut self, world: &mut Runtime) -> Result<bool, Error> {
         // Max size of a UDP packet
         self.buffer.resize(65536, 0);
 
         // Attempt to receive packet
         let result = self.socket.recv_from(&mut self.buffer);
         let Some((size, remote)) = check_io(result)? else {
-            return Ok(false)
+            return Ok(false);
         };
 
         event!(Level::TRACE, ?remote, "received incoming");
@@ -205,13 +206,13 @@ impl Service {
     fn try_send(&mut self) -> Result<bool, Error> {
         // Check if we have anything to send
         let Some(packet) = self.queue.front() else {
-            return Ok(false)
+            return Ok(false);
         };
 
         // Attempt to send it
         let result = self.socket.send_to(&packet.data, packet.remote);
         let Some(_) = check_io(result)? else {
-            return Ok(false)
+            return Ok(false);
         };
 
         // Remove the packet we've sent

@@ -1,9 +1,10 @@
 use std::net::SocketAddr;
+use std::ops::ControlFlow;
 
 use anyhow::Error;
 use stewart::{
     message::{Mailbox, Sender, Signal},
-    Actor, Metadata, World,
+    Actor, Runtime,
 };
 use stewart_mio::{net::tcp, RegistryRef};
 use tracing::{event, Level};
@@ -12,7 +13,7 @@ use crate::{connection, HttpEvent};
 
 /// Open a HTTP listener on the given address.
 pub fn bind(
-    world: &mut World,
+    world: &mut Runtime,
     registry: RegistryRef,
     addr: SocketAddr,
     http_events: Sender<HttpEvent>,
@@ -43,7 +44,7 @@ struct StreamEntry {
 
 impl Service {
     fn new(
-        world: &mut World,
+        world: &mut Runtime,
         registry: RegistryRef,
         addr: SocketAddr,
         http_events: Sender<HttpEvent>,
@@ -70,7 +71,7 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
         // Handle incoming TCP connections
         while let Some(event) = self.tcp_events.recv() {
             match event {
@@ -83,7 +84,7 @@ impl Actor for Service {
                         event.actions,
                         events.sender(),
                         self.http_events.clone(),
-                    )?;
+                    ).unwrap();
 
                     // Track the connection
                     let connection = StreamEntry {
@@ -125,9 +126,9 @@ impl Actor for Service {
                     .actions
                     .send(world, connection::ConnectionAction::Close);
             }
-            meta.set_stop();
+            return ControlFlow::Break(());
         }
 
-        Ok(())
+        ControlFlow::Continue(())
     }
 }

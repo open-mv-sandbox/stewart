@@ -1,9 +1,10 @@
 mod utils;
 
+use std::ops::ControlFlow;
 use anyhow::Error;
 use stewart::{
     message::{Mailbox, Signal},
-    Actor, Metadata, World,
+    Actor, Runtime,
 };
 use stewart_http::{HttpEvent, RequestAction};
 use stewart_mio::{Registry, RegistryRef};
@@ -12,13 +13,13 @@ use tracing::{event, Level};
 fn main() -> Result<(), Error> {
     utils::init_logging();
 
-    let mut world = World::default();
+    let mut world = Runtime::default();
     let registry = Registry::new()?;
 
     // Start the actor
     let signal = Signal::default();
     let actor = Service::new(&mut world, signal.clone(), registry.handle())?;
-    let id = world.insert("html-hello", actor);
+    let id = world.insert("http-hello", actor);
     signal.set_id(id);
 
     // Run the event loop
@@ -32,7 +33,7 @@ struct Service {
 }
 
 impl Service {
-    pub fn new(world: &mut World, signal: Signal, registry: RegistryRef) -> Result<Self, Error> {
+    pub fn new(world: &mut Runtime, signal: Signal, registry: RegistryRef) -> Result<Self, Error> {
         let http_events = Mailbox::new(signal);
 
         let addr = "127.0.0.1:1234".parse()?;
@@ -44,7 +45,7 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut World, _meta: &mut Metadata) -> Result<(), Error> {
+    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
         while let Some(event) = self.http_events.recv() {
             let HttpEvent::Request(request) = event;
 
@@ -54,10 +55,10 @@ impl Actor for Service {
             let body = RESPONSE.into();
             request
                 .actions
-                .send(world, RequestAction::SendResponse(body))?;
+                .send(world, RequestAction::SendResponse(body)).unwrap();
         }
 
-        Ok(())
+        ControlFlow::Continue(())
     }
 }
 

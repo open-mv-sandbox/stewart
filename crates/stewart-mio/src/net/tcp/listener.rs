@@ -1,10 +1,11 @@
 use std::net::SocketAddr;
+use std::ops::ControlFlow;
 
 use anyhow::Error;
 use mio::Interest;
 use stewart::{
     message::{Mailbox, Sender, Signal},
-    Actor, Metadata, World,
+    Actor, Runtime,
 };
 use tracing::{event, instrument, Level};
 
@@ -28,8 +29,8 @@ pub enum ListenerEvent {
 }
 
 pub struct ConnectedEvent {
-    pub events: Mailbox<tcp::ConnectionEvent>,
-    pub actions: Sender<tcp::ConnectionAction>,
+    pub events: Mailbox<tcp::StreamEvent>,
+    pub actions: Sender<tcp::StreamAction>,
 }
 
 /// Open a TCP stream listener on the given address.
@@ -38,7 +39,7 @@ pub struct ConnectedEvent {
 /// Before a connection is established, you first need to 'listen' for those on a port.
 #[instrument("tcp::bind", skip_all)]
 pub fn bind(
-    world: &mut World,
+    world: &mut Runtime,
     registry: RegistryRef,
     addr: SocketAddr,
     event_sender: Sender<ListenerEvent>,
@@ -99,25 +100,25 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        let state = self.ready.take()?;
+    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
+        let state = self.ready.take().unwrap();
 
         if state.readable {
-            self.on_listener_ready(world)?;
+            self.on_listener_ready(world).unwrap();
         }
 
         while let Some(_action) = self.actions.recv() {
             event!(Level::DEBUG, "stopping");
-            self.events.send(world, ListenerEvent::Closed)?;
-            meta.set_stop();
+            self.events.send(world, ListenerEvent::Closed).unwrap();
+            return ControlFlow::Break(());
         }
 
-        Ok(())
+        ControlFlow::Continue(())
     }
 }
 
 impl Service {
-    fn on_listener_ready(&mut self, world: &mut World) -> Result<(), Error> {
+    fn on_listener_ready(&mut self, world: &mut Runtime) -> Result<(), Error> {
         // Accept any pending streams
         while let Some((stream, remote_addr)) = check_io(self.listener.accept())? {
             event!(Level::DEBUG, ?remote_addr, "stream accepted");

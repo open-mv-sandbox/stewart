@@ -5,11 +5,11 @@ use thiserror::Error;
 use thunderdome::{Arena, Index};
 use tracing::{event, instrument, span, Level};
 
-use crate::{Actor, Metadata};
+use crate::{Actor};
 
 /// Thread-local actor tracking and execution system.
 #[derive(Default)]
-pub struct World {
+pub struct Runtime {
     actors: Arena<ActorEntry>,
     queue: VecDeque<Index>,
 }
@@ -19,7 +19,7 @@ struct ActorEntry {
     actor: Option<Box<dyn Actor>>,
 }
 
-impl Drop for World {
+impl Drop for Runtime {
     fn drop(&mut self) {
         let mut names = Vec::new();
 
@@ -31,20 +31,20 @@ impl Drop for World {
             event!(
                 Level::WARN,
                 ?names,
-                "actors not cleaned up before world drop",
+                "actors not cleaned up before runtime drop",
             );
         }
     }
 }
 
-impl World {
-    /// Insert an actor into the world.
+impl Runtime {
+    /// Insert an actor into the runtime.
     ///
     /// The given `name` will be used in logging.
-    #[instrument("World::insert", level = "debug", skip_all)]
+    #[instrument("Runtime::insert", level = "debug", skip_all)]
     pub fn insert<A>(&mut self, name: &'static str, actor: A) -> Id
-    where
-        A: Actor,
+        where
+            A: Actor,
     {
         event!(Level::DEBUG, name, "inserting actor");
 
@@ -58,8 +58,8 @@ impl World {
         Id { index }
     }
 
-    /// Remove an actor from the world.
-    #[instrument("World::remove", level = "debug", skip_all)]
+    /// Remove an actor from the runtime.
+    #[instrument("Runtime::remove", level = "debug", skip_all)]
     pub fn remove(&mut self, id: Id) -> Result<(), RemoveError> {
         event!(Level::DEBUG, "removing actor");
 
@@ -67,14 +67,17 @@ impl World {
         self.queue.retain(|i| *i != id.index);
 
         // Remove the actor itself
-        self.actors
+        let entry = self.actors
             .remove(id.index)
             .context("failed to find actor")?;
+
+        event!(Level::DEBUG, name = entry.name, "removed actor");
 
         Ok(())
     }
 
     /// Enqueue the actor for processing.
+    #[instrument("Runtime::enqueue", level = "debug", skip_all)]
     pub fn enqueue(&mut self, id: Id) -> Result<(), EnqueueError> {
         event!(Level::TRACE, "enqueuing actor");
 
@@ -95,7 +98,7 @@ impl World {
     }
 
     /// Process all pending signalled actors, until none are left pending.
-    #[instrument("World::process", level = "debug", skip_all)]
+    #[instrument("Runtime::process", level = "debug", skip_all)]
     pub fn process(&mut self) -> Result<(), ProcessError> {
         while let Some(index) = self.queue.pop_front() {
             self.process_actor(index).context("failed to process")?;
@@ -114,22 +117,12 @@ impl World {
         // Let the actor's implementation process
         event!(Level::TRACE, "calling actor");
         let id = Id { index };
-        let mut meta = Metadata::new(id);
-        let result = actor.process(self, &mut meta);
-
-        // Check if processing failed
-        if let Err(error) = result {
-            event!(Level::ERROR, ?error, "error while calling actor");
-
-            // If a processing error happens, the actor should be stopped.
-            // It's better to stop than to potentially retain inconsistent state.
-            meta.set_stop();
-        };
+        let control_flow = actor.process(self);
 
         self.unborrow(index, actor)?;
 
         // Stop if necessary
-        if meta.stop() {
+        if control_flow.is_break() {
             self.remove(id)?;
         }
 
@@ -147,14 +140,14 @@ impl World {
         let entry = self
             .actors
             .get_mut(index)
-            .context("failed to find actor for return")?;
+            .context("failed to find actor")?;
         entry.actor = Some(actor);
 
         Ok(())
     }
 }
 
-/// Identifier of an actor inserted into a world.
+/// Identifier of an actor inserted into a runtime.
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Id {
     index: Index,

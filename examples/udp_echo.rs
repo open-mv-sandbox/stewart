@@ -1,11 +1,12 @@
 mod utils;
 
 use std::net::SocketAddr;
+use std::ops::ControlFlow;
 
 use anyhow::Error;
 use stewart::{
     message::{Mailbox, Sender, Signal},
-    Actor, Metadata, World,
+    Actor, Runtime,
 };
 use stewart_mio::{net::udp, Registry, RegistryRef};
 use tracing::{event, Level};
@@ -13,7 +14,7 @@ use tracing::{event, Level};
 fn main() -> Result<(), Error> {
     utils::init_logging();
 
-    let mut world = World::default();
+    let mut world = Runtime::default();
     let registry = Registry::new()?;
 
     // Start the actor
@@ -56,7 +57,7 @@ struct Service {
 }
 
 impl Service {
-    pub fn new(world: &mut World, signal: Signal, registry: RegistryRef) -> Result<Self, Error> {
+    pub fn new(world: &mut Runtime, signal: Signal, registry: RegistryRef) -> Result<Self, Error> {
         // Start the listen port
         let server_mailbox = Mailbox::new(signal.clone());
         let (server_sender, info) = udp::bind(
@@ -91,9 +92,9 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut World, _meta: &mut Metadata) -> Result<(), Error> {
+    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
         while let Some(packet) = self.server_mailbox.recv() {
-            let data = std::str::from_utf8(&packet.data)?;
+            let data = std::str::from_utf8(&packet.data).unwrap();
             event!(Level::INFO, data, "server received packet");
 
             // Echo back with a hello message
@@ -103,14 +104,14 @@ impl Actor for Service {
                 data: format!("Hello, \"{}\"!\n", data).into(),
             };
             let message = udp::Action::Send(packet);
-            self.server_sender.send(world, message)?;
+            self.server_sender.send(world, message).unwrap();
         }
 
         while let Some(packet) = self.client_mailbox.recv() {
-            let data = std::str::from_utf8(&packet.data)?;
+            let data = std::str::from_utf8(&packet.data).unwrap();
             event!(Level::INFO, data, "client received packet");
         }
 
-        Ok(())
+        ControlFlow::Continue(())
     }
 }

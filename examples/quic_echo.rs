@@ -4,14 +4,14 @@ use std::fs;
 
 use anyhow::{Context, Error};
 use rustls::{Certificate, PrivateKey};
-use stewart::World;
+use stewart::Runtime;
 use stewart_mio::Registry;
 use tracing::{event, Level};
 
 fn main() -> Result<(), Error> {
     utils::init_logging();
 
-    let mut world = World::default();
+    let mut world = Runtime::default();
     let registry = Registry::new()?;
 
     // Set up the QUIC server

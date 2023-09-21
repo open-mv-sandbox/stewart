@@ -7,9 +7,9 @@
 
 mod actor;
 pub mod message;
-mod world;
+mod runtime;
 
 pub use self::{
-    actor::{Actor, Metadata},
-    world::{Id, ProcessError, World},
+    actor::{Actor},
+    runtime::{Id, ProcessError, Runtime},
 };

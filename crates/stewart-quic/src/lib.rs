@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 
+use std::ops::ControlFlow;
 use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Error;
@@ -8,13 +9,13 @@ use quinn_proto::{DatagramEvent, Endpoint, EndpointConfig, ServerConfig};
 use rustls::{Certificate, PrivateKey};
 use stewart::{
     message::{Mailbox, Sender, Signal},
-    Actor, Metadata, World,
+    Actor, Runtime,
 };
 use stewart_mio::{net::udp, RegistryRef};
 use tracing::{event, Level};
 
 pub fn endpoint(
-    world: &mut World,
+    world: &mut Runtime,
     registry: RegistryRef,
     addr: SocketAddr,
     certificate: Certificate,
@@ -37,7 +38,7 @@ struct Service {
 
 impl Service {
     fn new(
-        world: &mut World,
+        world: &mut Runtime,
         registry: RegistryRef,
         addr: SocketAddr,
         certificate: Certificate,
@@ -73,7 +74,7 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, _world: &mut World, _meta: &mut Metadata) -> Result<(), Error> {
+    fn process(&mut self, _world: &mut Runtime) -> ControlFlow<()> {
         while let Some(packet) = self.event_mailbox.recv() {
             event!(Level::TRACE, "received packet");
 
@@ -100,6 +101,6 @@ impl Actor for Service {
 
         // TODO: Poll transmit
 
-        Ok(())
+        ControlFlow::Continue(())
     }
 }

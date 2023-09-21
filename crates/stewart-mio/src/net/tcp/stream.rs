@@ -2,19 +2,20 @@ use std::{
     collections::VecDeque,
     io::{ErrorKind, Read, Write},
 };
+use std::ops::ControlFlow;
 
 use anyhow::Error;
 use bytes::{Buf, Bytes, BytesMut};
 use mio::Interest;
 use stewart::{
     message::{Mailbox, Sender, Signal},
-    Actor, Metadata, World,
+    Actor, Runtime,
 };
 use tracing::{event, Level};
 
 use crate::{ReadyRef, RegistryRef};
 
-pub enum ConnectionAction {
+pub enum StreamAction {
     /// Send a data to the stream.
     Send(SendAction),
     /// Close the stream.
@@ -25,7 +26,7 @@ pub struct SendAction {
     pub data: Bytes,
 }
 
-pub enum ConnectionEvent {
+pub enum StreamEvent {
     /// Data received on the stream.
     Recv(RecvEvent),
     /// Stream has been closed.
@@ -37,11 +38,11 @@ pub struct RecvEvent {
 }
 
 pub(crate) fn open(
-    world: &mut World,
+    world: &mut Runtime,
     registry: RegistryRef,
     stream: mio::net::TcpStream,
-    event_sender: Sender<ConnectionEvent>,
-) -> Result<Sender<ConnectionAction>, Error> {
+    event_sender: Sender<StreamEvent>,
+) -> Result<Sender<StreamAction>, Error> {
     let signal = Signal::default();
     let actor = Service::new(signal.clone(), registry, stream, event_sender)?;
     let actions = actor.actions.sender();
@@ -53,8 +54,8 @@ pub(crate) fn open(
 }
 
 struct Service {
-    actions: Mailbox<ConnectionAction>,
-    events: Sender<ConnectionEvent>,
+    actions: Mailbox<StreamAction>,
+    events: Sender<StreamEvent>,
 
     stream: mio::net::TcpStream,
     ready: ReadyRef,
@@ -69,7 +70,7 @@ impl Service {
         signal: Signal,
         registry: RegistryRef,
         mut stream: mio::net::TcpStream,
-        events: Sender<ConnectionEvent>,
+        events: Sender<StreamEvent>,
     ) -> Result<Self, Error> {
         event!(Level::DEBUG, "opening stream");
 
@@ -100,33 +101,33 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        self.poll_actions(meta)?;
-        self.poll_ready(world)?;
+    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
+        self.poll_actions()?;
+        self.poll_ready(world).unwrap();
 
         if self.closed {
             event!(Level::DEBUG, "stopping");
-            let _ = self.events.send(world, ConnectionEvent::Closed);
+            let _ = self.events.send(world, StreamEvent::Closed);
         }
 
-        Ok(())
+        ControlFlow::Continue(())
     }
 }
 
 impl Service {
-    fn poll_actions(&mut self, meta: &mut Metadata) -> Result<(), Error> {
+    fn poll_actions(&mut self) -> ControlFlow<()> {
         // Handle actions
         while let Some(action) = self.actions.recv() {
             match action {
-                ConnectionAction::Send(action) => self.on_action_send(action)?,
-                ConnectionAction::Close => meta.set_stop(),
+                StreamAction::Send(action) => self.on_action_send(action).unwrap(),
+                StreamAction::Close => return ControlFlow::Break(()),
             }
         }
 
-        Ok(())
+        ControlFlow::Continue(())
     }
 
-    fn poll_ready(&mut self, world: &mut World) -> Result<(), Error> {
+    fn poll_ready(&mut self, world: &mut Runtime) -> Result<(), Error> {
         let state = self.ready.take()?;
 
         if state.readable {
@@ -140,7 +141,7 @@ impl Service {
         Ok(())
     }
 
-    fn on_ready_readable(&mut self, world: &mut World) -> Result<(), Error> {
+    fn on_ready_readable(&mut self, world: &mut Runtime) -> Result<(), Error> {
         // Make sure we have at least a minimum amount of buffer space left
         if self.buffer.len() < 1024 {
             self.buffer.resize(2048, 0);
@@ -180,7 +181,7 @@ impl Service {
             event!(Level::TRACE, count = bytes_read, "received incoming");
             let data = self.buffer.split_to(bytes_read).freeze();
             let event = RecvEvent { data };
-            self.events.send(world, ConnectionEvent::Recv(event))?;
+            self.events.send(world, StreamEvent::Recv(event))?;
         }
 
         // If the stream got closed, remember
@@ -208,7 +209,7 @@ impl Service {
     fn try_send(&mut self) -> Result<bool, Error> {
         // Check if we have anything to send
         let Some(data) = self.queue.front_mut() else {
-            return Ok(false)
+            return Ok(false);
         };
 
         // Attempt to send as much as we can
@@ -248,7 +249,7 @@ impl Service {
         let should_register = self.queue.is_empty();
         self.queue.push_back(action.data);
 
-        // Reregister so we can receive write events
+        // Re-register so we can receive write events
         if should_register {
             self.ready
                 .reregister(&mut self.stream, Interest::READABLE | Interest::WRITABLE)?;

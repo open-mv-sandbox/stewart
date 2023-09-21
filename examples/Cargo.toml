@@ -22,8 +22,8 @@ name = "hello"
 path = "hello.rs"
 
 [[example]]
-name = "html_hello"
-path = "html_hello.rs"
+name = "http_hello"
+path = "http_hello.rs"
 
 [[example]]
 name = "quic_echo"

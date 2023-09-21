@@ -1,12 +1,12 @@
 use anyhow::Error;
 use mio::{event::Event, Events};
-use stewart::World;
+use stewart::Runtime;
 use tracing::{event, instrument, Level};
 
 use crate::{registry::ReadyState, Registry};
 
 #[instrument("mio-event-loop", skip_all)]
-pub fn run_event_loop(world: &mut World, registry: &Registry) -> Result<(), Error> {
+pub fn run_event_loop(world: &mut Runtime, registry: &Registry) -> Result<(), Error> {
     // Process pending messages raised from initialization
     event!(Level::TRACE, "processing init messages");
     world.process()?;
@@ -17,7 +17,7 @@ pub fn run_event_loop(world: &mut World, registry: &Registry) -> Result<(), Erro
     Ok(())
 }
 
-fn run_poll_loop(world: &mut World, registry: &Registry) -> Result<(), Error> {
+fn run_poll_loop(world: &mut Runtime, registry: &Registry) -> Result<(), Error> {
     let mut events = Events::with_capacity(256);
 
     loop {
@@ -36,7 +36,7 @@ fn run_poll_loop(world: &mut World, registry: &Registry) -> Result<(), Error> {
     }
 }
 
-fn handle(world: &mut World, registry: &Registry, event: &Event) -> Result<(), Error> {
+fn handle(world: &mut Runtime, registry: &Registry, event: &Event) -> Result<(), Error> {
     event!(Level::TRACE, "handling mio event");
 
     let ready = ReadyState {

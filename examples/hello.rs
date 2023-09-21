@@ -1,7 +1,7 @@
 mod utils;
 
 use anyhow::Error;
-use stewart::{message::Mailbox, World};
+use stewart::{message::Mailbox, Runtime};
 use tracing::{event, Level};
 use uuid::Uuid;
 
@@ -11,7 +11,7 @@ use crate::hello_service::protocol as hello;
 fn main() -> Result<(), Error> {
     utils::init_logging();
 
-    let mut world = World::default();
+    let mut world = Runtime::default();
 
     // Start the hello service
     let service = hello_service::start(&mut world, "Example".to_string())?;
@@ -64,10 +64,11 @@ fn main() -> Result<(), Error> {
 
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
+    use std::ops::ControlFlow;
     use anyhow::Error;
     use stewart::{
         message::{Mailbox, Sender, Signal},
-        Actor, Metadata, World,
+        Actor, Runtime,
     };
     use tracing::{event, instrument, Level};
 
@@ -110,7 +111,7 @@ mod hello_service {
 
     /// Start a hello service on the current actor world.
     #[instrument("hello::start", skip_all)]
-    pub fn start(world: &mut World, name: String) -> Result<Sender<protocol::Request>, Error> {
+    pub fn start(world: &mut Runtime, name: String) -> Result<Sender<protocol::Request>, Error> {
         event!(Level::INFO, "starting");
 
         let signal = Signal::default();
@@ -146,7 +147,7 @@ mod hello_service {
     }
 
     impl Actor for Service {
-        fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+        fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
             event!(Level::INFO, "processing messages");
 
             // Process messages on the mailbox
@@ -156,15 +157,15 @@ mod hello_service {
                         event!(Level::INFO, "Hello \"{}\", from {}!", name, self.name);
                     }
                     protocol::Action::Stop => {
-                        meta.set_stop();
+                        return ControlFlow::Break(());
                     }
                 }
 
                 // Reply back to the sender
-                request.result_sender.send(world, request.id)?;
+                request.result_sender.send(world, request.id).unwrap();
             }
 
-            Ok(())
+            ControlFlow::Continue(())
         }
     }
 }

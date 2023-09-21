@@ -1,10 +1,11 @@
 mod utils;
 
+use std::ops::ControlFlow;
 use anyhow::Error;
 use bytes::Bytes;
 use stewart::{
     message::{Mailbox, Sender, Signal},
-    Actor, Metadata, World,
+    Actor, Runtime,
 };
 use stewart_mio::{
     net::tcp::{self},
@@ -15,7 +16,7 @@ use tracing::{event, Level};
 fn main() -> Result<(), Error> {
     utils::init_logging();
 
-    let mut world = World::default();
+    let mut world = Runtime::default();
     let registry = Registry::new()?;
 
     // Start the actor
@@ -38,7 +39,7 @@ struct Service {
 }
 
 impl Service {
-    pub fn new(world: &mut World, signal: Signal, registry: RegistryRef) -> Result<Self, Error> {
+    pub fn new(world: &mut Runtime, signal: Signal, registry: RegistryRef) -> Result<Self, Error> {
         let server_mailbox = Mailbox::new(signal.clone());
 
         // Start the listen port
@@ -61,16 +62,16 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
-        self.poll_listener(world, meta)?;
-        self.poll_connections(world)?;
+    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
+        self.poll_listener(world)?;
+        self.poll_connections(world).unwrap();
 
-        Ok(())
+        ControlFlow::Continue(())
     }
 }
 
 impl Service {
-    fn poll_listener(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error> {
+    fn poll_listener(&mut self, world: &mut Runtime) -> ControlFlow<()> {
         while let Some(event) = self.server_mailbox.recv() {
             match event {
                 tcp::ListenerEvent::Connected(event) => {
@@ -81,7 +82,7 @@ impl Service {
                     let action = tcp::SendAction { data };
                     event
                         .actions
-                        .send(world, tcp::ConnectionAction::Send(action))?;
+                        .send(world, tcp::StreamAction::Send(action)).unwrap();
 
                     // Keep track of the stream
                     event.events.set_signal(self.signal.clone());
@@ -92,14 +93,14 @@ impl Service {
                     };
                     self.connections.push(connection);
                 }
-                tcp::ListenerEvent::Closed => meta.set_stop(),
+                tcp::ListenerEvent::Closed => return ControlFlow::Break(()),
             }
         }
 
-        Ok(())
+        ControlFlow::Continue(())
     }
 
-    fn poll_connections(&mut self, world: &mut World) -> Result<(), Error> {
+    fn poll_connections(&mut self, world: &mut Runtime) -> Result<(), Error> {
         for connection in &mut self.connections {
             connection.poll(world)?;
         }
@@ -117,17 +118,17 @@ struct Connection {
 }
 
 impl Connection {
-    fn poll(&mut self, world: &mut World) -> Result<(), Error> {
+    fn poll(&mut self, world: &mut Runtime) -> Result<(), Error> {
         // Handle any incoming TCP stream events
         while let Some(event) = self.event.events.recv() {
             match event {
-                tcp::ConnectionEvent::Recv(event) => {
+                tcp::StreamEvent::Recv(event) => {
                     event!(Level::INFO, bytes = event.data.len(), "received data");
 
                     let data = std::str::from_utf8(&event.data)?;
                     self.pending.push_str(data);
                 }
-                tcp::ConnectionEvent::Closed => {
+                tcp::StreamEvent::Closed => {
                     event!(Level::INFO, "stream closed");
                     self.closed = true;
                 }
@@ -153,7 +154,7 @@ impl Connection {
                 let reply = format!("HELLO, \"{}\"!\n", line.trim());
 
                 let packet = tcp::SendAction { data: reply.into() };
-                let message = tcp::ConnectionAction::Send(packet);
+                let message = tcp::StreamAction::Send(packet);
                 self.event.actions.send(world, message)?;
             }
 

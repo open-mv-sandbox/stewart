@@ -7,7 +7,7 @@ use std::{
 use anyhow::{anyhow, Context, Error};
 use thiserror::Error;
 
-use crate::{message::Signal, World};
+use crate::{message::Signal, Runtime};
 
 /// Shared *single-threaded* multi-sender multi-receiver message queue.
 ///
@@ -94,7 +94,7 @@ impl<M> Clone for Sender<M> {
 
 impl<M> Sender<M> {
     /// Send a message to the target mailbox of this sender.
-    pub fn send(&self, world: &mut World, message: M) -> Result<(), SendError> {
+    pub fn send(&self, world: &mut Runtime, message: M) -> Result<(), SendError> {
         // Check if the mailbox is still available
         let Some(shared) = self.shared.upgrade() else {
             return Err(anyhow!("mailbox closed").into())

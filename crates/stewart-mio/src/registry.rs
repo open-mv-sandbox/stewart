@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{Context, Error};
 use mio::{event::Source, Events, Interest, Poll, Token};
-use stewart::{message::Signal, World};
+use stewart::{message::Signal, Runtime};
 use thunderdome::{Arena, Index};
 use tracing::{event, Level};
 
@@ -48,7 +48,7 @@ impl Registry {
 
     pub(crate) fn update_state(
         &self,
-        world: &mut World,
+        world: &mut Runtime,
         token: Token,
         ready: ReadyState,
     ) -> Result<(), Error> {

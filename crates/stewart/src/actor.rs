@@ -1,6 +1,6 @@
-use anyhow::Error;
+use std::ops::ControlFlow;
 
-use crate::{Id, World};
+use crate::Runtime;
 
 /// Actor identity and processing implementation trait.
 ///
@@ -11,32 +11,8 @@ use crate::{Id, World};
 /// You should *always* prefer this over panicking, as this crashes the entire runtime.
 /// Instead of using `unwrap` or `expect`, use `context` from the `anyhow` crate.
 pub trait Actor: 'static {
+    // TODO: Re-introduce one-message-per-call.
+
     /// Processing step implementation.
-    fn process(&mut self, world: &mut World, meta: &mut Metadata) -> Result<(), Error>;
-}
-
-/// Metadata of an `Actor` in a world.
-pub struct Metadata {
-    id: Id,
-    stop: bool,
-}
-
-impl Metadata {
-    pub(crate) fn new(id: Id) -> Self {
-        Self { id, stop: false }
-    }
-
-    /// Get the identifier of this actor.
-    pub fn id(&self) -> Id {
-        self.id
-    }
-
-    pub(crate) fn stop(&self) -> bool {
-        self.stop
-    }
-
-    /// At the end of this processing step, stop the actor.
-    pub fn set_stop(&mut self) {
-        self.stop = true;
-    }
+    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()>;
 }
