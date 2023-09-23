@@ -2,7 +2,7 @@ use anyhow::Error;
 use bytes::Bytes;
 use std::ops::ControlFlow;
 use stewart::{
-    message::{Mailbox, Sender, Signal},
+    sender::{Mailbox, Sender, Signal},
     Actor, Runtime,
 };
 use stewart_mio::{
@@ -60,7 +60,7 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
+    fn handle(&mut self, world: &mut Runtime) -> ControlFlow<()> {
         self.poll_listener(world)?;
         self.poll_connections(world).unwrap();
 

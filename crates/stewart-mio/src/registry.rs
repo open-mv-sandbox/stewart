@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{Context, Error};
 use mio::{event::Source, Events, Interest, Poll, Token};
-use stewart::{message::Signal, Runtime};
+use stewart::{sender::Signal, Runtime};
 use thunderdome::{Arena, Index};
 use tracing::{event, Level};
 

@@ -4,7 +4,7 @@ use std::ops::ControlFlow;
 use anyhow::Error;
 use bytes::{BufMut, Bytes, BytesMut};
 use stewart::{
-    message::{Mailbox, Sender, Signal},
+    sender::{Mailbox, Sender, Signal},
     Actor, Runtime,
 };
 use stewart_mio::net::tcp;
@@ -89,9 +89,7 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
-        println!("PROCESSING ONCE");
-
+    fn handle(&mut self, world: &mut Runtime) -> ControlFlow<()> {
         self.process_tcp().unwrap();
 
         // Can't do anything further if we don't have an open TCP connection

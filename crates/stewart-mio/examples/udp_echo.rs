@@ -3,7 +3,7 @@ use std::ops::ControlFlow;
 
 use anyhow::Error;
 use stewart::{
-    message::{Mailbox, Sender, Signal},
+    sender::{Mailbox, Sender, Signal},
     Actor, Runtime,
 };
 use stewart_mio::{net::udp, Registry, RegistryRef};
@@ -90,7 +90,7 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
+    fn handle(&mut self, world: &mut Runtime) -> ControlFlow<()> {
         while let Some(packet) = self.server_mailbox.recv() {
             let data = std::str::from_utf8(&packet.data).unwrap();
             event!(Level::INFO, data, "server received packet");

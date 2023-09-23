@@ -3,10 +3,7 @@ use std::ops::ControlFlow;
 
 use anyhow::Error;
 use mio::Interest;
-use stewart::{
-    message::{Mailbox, Sender, Signal},
-    Actor, Runtime,
-};
+use stewart::{sender::Sender, Actor, Runtime};
 use tracing::{event, instrument, Level};
 
 use crate::{
@@ -100,7 +97,7 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
+    fn handle(&mut self, world: &mut Runtime) -> ControlFlow<()> {
         let state = self.ready.take().unwrap();
 
         if state.readable {

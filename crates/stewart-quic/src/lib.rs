@@ -8,7 +8,7 @@ use bytes::BytesMut;
 use quinn_proto::{DatagramEvent, Endpoint, EndpointConfig, ServerConfig};
 use rustls::{Certificate, PrivateKey};
 use stewart::{
-    message::{Mailbox, Sender, Signal},
+    sender::{Mailbox, Sender, Signal},
     Actor, Runtime,
 };
 use stewart_mio::{net::udp, RegistryRef};
@@ -74,7 +74,7 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, _world: &mut Runtime) -> ControlFlow<()> {
+    fn handle(&mut self, _world: &mut Runtime) -> ControlFlow<()> {
         while let Some(packet) = self.event_mailbox.recv() {
             event!(Level::TRACE, "received packet");
 

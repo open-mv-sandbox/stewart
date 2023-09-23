@@ -1,11 +1,11 @@
-use std::{collections::VecDeque, net::SocketAddr, time::Instant};
 use std::ops::ControlFlow;
+use std::{collections::VecDeque, net::SocketAddr, time::Instant};
 
 use anyhow::Error;
 use bytes::{Bytes, BytesMut};
 use mio::Interest;
 use stewart::{
-    message::{Mailbox, Sender, Signal},
+    sender::{Mailbox, Sender, Signal},
     Actor, Runtime,
 };
 use tracing::{event, instrument, Level};
@@ -102,7 +102,7 @@ impl Drop for Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
+    fn handle(&mut self, world: &mut Runtime) -> ControlFlow<()> {
         self.poll_actions()?;
         self.poll_ready(world).unwrap();
 

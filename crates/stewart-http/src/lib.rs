@@ -5,7 +5,7 @@ mod listener;
 mod parser;
 
 use bytes::Bytes;
-use stewart::message::Sender;
+use stewart::sender::Sender;
 
 pub use self::listener::bind;
 

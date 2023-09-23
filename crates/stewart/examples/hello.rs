@@ -1,25 +1,27 @@
 use anyhow::Error;
-use stewart::{message::Mailbox, Runtime};
+use std::ops::ControlFlow;
+use stewart::sender::Sender;
+use stewart::{Actor, ActorError, Runtime};
 use tracing::{event, Level};
 use uuid::Uuid;
 
-// Import the protocol as an alias to differentiate between multiple.
+// Import the protocol as an alias to differentiate between multiple protocol modules.
 use crate::hello_service::protocol as hello;
 
 fn main() -> Result<(), Error> {
     devutils::init_logging();
 
-    let mut world = Runtime::default();
+    let mut rt = Runtime::default();
 
     // Start the hello service
-    let service = hello_service::start(&mut world, "Example".to_string())?;
+    let service_sender = hello_service::start(&mut rt, "Example".to_string())?;
+
+    // Start a result receiver, so we can actually receive the replies given
+    let id = rt.insert("result-listener", ResultListener)?;
+    let result_sender = Sender::new(id);
 
     // Now that we have an address, send it some data
     event!(Level::INFO, "sending messages");
-
-    // Mailboxes don't need to be associated with an actor.
-    let mailbox = Mailbox::floating();
-    mailbox.set_floating();
 
     let action = hello::Action::Greet {
         name: "World".to_string(),
@@ -27,9 +29,9 @@ fn main() -> Result<(), Error> {
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
-        result_sender: mailbox.sender(),
+        result_sender: result_sender.clone(),
     };
-    service.send(&mut world, message)?;
+    service_sender.send(&mut rt, message)??;
 
     let action = hello::Action::Greet {
         name: "Actors".to_string(),
@@ -37,44 +39,51 @@ fn main() -> Result<(), Error> {
     let message = hello::Request {
         id: Uuid::new_v4(),
         action,
-        result_sender: mailbox.sender(),
+        result_sender: result_sender.clone(),
     };
-    service.send(&mut world, message)?;
+    service_sender.send(&mut rt, message)??;
 
     // Stop the actor
     let message = hello::Request {
         id: Uuid::new_v4(),
         action: hello::Action::Stop,
-        result_sender: mailbox.sender(),
+        result_sender: result_sender.clone(),
     };
-    service.send(&mut world, message)?;
+    service_sender.send(&mut rt, message)??;
 
     // Process messages
-    world.process()?;
-
-    // We can receive messages outside actors by just checking
-    while let Some(uuid) = mailbox.recv() {
-        event!(Level::INFO, ?uuid, "received response");
-    }
+    rt.process()?;
 
     Ok(())
 }
 
+struct ResultListener;
+
+impl Actor for ResultListener {
+    type Message = Uuid;
+
+    fn handle(
+        &mut self,
+        _rt: &mut Runtime,
+        message: Self::Message,
+    ) -> Result<ControlFlow<()>, ActorError> {
+        event!(Level::INFO, uuid = ?message, "received response");
+        Ok(ControlFlow::Continue(()))
+    }
+}
+
 /// To demonstrate encapsulation, an inner module is used here.
 mod hello_service {
-    use anyhow::Error;
+    use anyhow::{Context, Error};
     use std::ops::ControlFlow;
-    use stewart::{
-        message::{Mailbox, Sender, Signal},
-        Actor, Runtime,
-    };
+    use stewart::{sender::Sender, Actor, ActorError, Runtime};
     use tracing::{event, instrument, Level};
 
     /// You can define your public interfaces as a "protocol", which contains just the types
     /// necessary to talk to your service.
     /// This is equivalent to an "interface" or "trait".
     pub mod protocol {
-        use stewart::message::Sender;
+        use stewart::sender::Sender;
         use uuid::Uuid;
 
         /// It's good practice to wrap your service's actions in a `Request` type, for adding
@@ -96,30 +105,23 @@ mod hello_service {
         }
 
         pub enum Action {
-            Greet {
-                name: String,
-            },
-            /// It's important to send back when stop has completed, as dropping all senders
-            /// will raise errors in mailboxes.
-            /// By sending back when it's done, other actors can wait with cleaning them up
-            /// until the stop is completed.
+            Greet { name: String },
             Stop,
         }
     }
 
     /// Start a hello service on the current actor world.
     #[instrument("hello::start", skip_all)]
-    pub fn start(world: &mut Runtime, name: String) -> Result<Sender<protocol::Request>, Error> {
+    pub fn start(rt: &mut Runtime, name: String) -> Result<Sender<protocol::Request>, Error> {
         event!(Level::INFO, "starting");
 
-        let signal = Signal::default();
-        let (actor, signal) = Service::new(signal, name);
-        let sender = actor.mailbox.sender();
+        let service = Service::new(name);
+        let id = rt.insert("hello", service)?;
 
-        let id = world.insert("hello", actor);
-
-        // To wake up our actor when a message gets sent, register its id in the signal
-        signal.set_id(id);
+        // Send messages to your actor using a `Sender` abstraction.
+        // You can send directly using the runtime, but using a sender will let you add mapping to
+        // separate public from private messages.
+        let sender = Sender::new(id);
 
         Ok(sender)
     }
@@ -129,41 +131,45 @@ mod hello_service {
     /// Since it is private, you are recommended to avoid `namespace::namespace`ing your types.
     struct Service {
         name: String,
-        mailbox: Mailbox<protocol::Request>,
     }
 
     impl Service {
-        fn new(signal: Signal, name: String) -> (Self, Signal) {
-            // Mailboxes let you send message around
-            let mailbox = Mailbox::new(signal.clone());
-
-            // Create the actor in the world
-            let this = Service { name, mailbox };
-
-            (this, signal)
+        fn new(name: String) -> Self {
+            Self { name }
         }
     }
 
     impl Actor for Service {
-        fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
+        type Message = protocol::Request;
+
+        fn handle(
+            &mut self,
+            rt: &mut Runtime,
+            message: protocol::Request,
+        ) -> Result<ControlFlow<()>, ActorError> {
             event!(Level::INFO, "processing messages");
 
-            // Process messages on the mailbox
-            while let Some(request) = self.mailbox.recv() {
-                match request.action {
-                    protocol::Action::Greet { name } => {
-                        event!(Level::INFO, "Hello \"{}\", from {}!", name, self.name);
-                    }
-                    protocol::Action::Stop => {
-                        return ControlFlow::Break(());
-                    }
-                }
+            let mut flow = ControlFlow::Continue(());
 
-                // Reply back to the sender
-                request.result_sender.send(world, request.id).unwrap();
+            // Process messages on the mailbox
+            match message.action {
+                protocol::Action::Greet { name } => {
+                    event!(Level::INFO, "Hello \"{}\", from {}!", name, self.name);
+                }
+                protocol::Action::Stop => {
+                    event!(Level::INFO, "stopping service");
+                    flow = ControlFlow::Break(());
+                }
             }
 
-            ControlFlow::Continue(())
+            // Reply back to the sender.
+            message
+                .result_sender
+                .send(rt, message.id)
+                .context("failed to send")?
+                .context("failed to send")?;
+
+            Ok(flow)
         }
     }
 }

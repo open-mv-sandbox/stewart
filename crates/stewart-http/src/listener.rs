@@ -3,7 +3,7 @@ use std::ops::ControlFlow;
 
 use anyhow::Error;
 use stewart::{
-    message::{Mailbox, Sender, Signal},
+    sender::{Mailbox, Sender, Signal},
     Actor, Runtime,
 };
 use stewart_mio::{net::tcp, RegistryRef};
@@ -71,7 +71,7 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
+    fn handle(&mut self, world: &mut Runtime) -> ControlFlow<()> {
         // Handle incoming TCP connections
         while let Some(event) = self.tcp_events.recv() {
             match event {
@@ -84,7 +84,8 @@ impl Actor for Service {
                         event.actions,
                         events.sender(),
                         self.http_events.clone(),
-                    ).unwrap();
+                    )
+                    .unwrap();
 
                     // Track the connection
                     let connection = StreamEntry {

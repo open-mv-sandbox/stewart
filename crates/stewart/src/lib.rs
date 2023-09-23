@@ -6,10 +6,22 @@
 //! stewart book.
 
 mod actor;
-pub mod message;
+mod container;
 mod runtime;
+pub mod sender;
+
+use anyhow::Error;
+use thiserror::Error;
 
 pub use self::{
-    actor::{Actor},
-    runtime::{Id, ProcessError, Runtime},
+    actor::{Actor, ActorError},
+    runtime::{Id, ProcessError, RemoveError, Runtime, SendError},
 };
+
+/// Internal error in stewart.
+#[derive(Error, Debug)]
+#[error("internal error in stewart")]
+pub struct InternalError {
+    #[from]
+    source: Error,
+}

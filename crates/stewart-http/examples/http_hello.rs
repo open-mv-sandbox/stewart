@@ -1,7 +1,7 @@
 use anyhow::Error;
 use std::ops::ControlFlow;
 use stewart::{
-    message::{Mailbox, Signal},
+    sender::{Mailbox, Signal},
     Actor, Runtime,
 };
 use stewart_http::{HttpEvent, RequestAction};
@@ -43,7 +43,7 @@ impl Service {
 }
 
 impl Actor for Service {
-    fn process(&mut self, world: &mut Runtime) -> ControlFlow<()> {
+    fn handle(&mut self, world: &mut Runtime) -> ControlFlow<()> {
         while let Some(event) = self.http_events.recv() {
             let HttpEvent::Request(request) = event;
 
